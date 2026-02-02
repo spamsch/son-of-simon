@@ -103,8 +103,20 @@ class Agent:
             if response.tool_calls:
                 # Show brief status when not in verbose mode
                 if not verbose:
-                    tool_names = [tc.name for tc in response.tool_calls]
-                    console.print(f"[dim]→ {', '.join(tool_names)}...[/dim]")
+                    tool_strs = []
+                    for tc in response.tool_calls:
+                        if tc.arguments:
+                            # Show key parameters in compact form
+                            params = []
+                            for k, v in tc.arguments.items():
+                                v_str = str(v)
+                                if len(v_str) > 30:
+                                    v_str = v_str[:27] + "..."
+                                params.append(f"{k}={v_str}")
+                            tool_strs.append(f"{tc.name}({', '.join(params)})")
+                        else:
+                            tool_strs.append(tc.name)
+                    console.print(f"[dim]→ {', '.join(tool_strs)}[/dim]")
                 await self._execute_tool_calls(response, verbose)
             else:
                 # No tool calls means the agent has finished
