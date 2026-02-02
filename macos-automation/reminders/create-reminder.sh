@@ -100,14 +100,16 @@ if [[ "$FLAG" == "true" ]]; then
 fi
 
 # Handle due date - extract components for locale-independent handling
-DUE_YEAR=""
-DUE_MONTH=""
-DUE_DAY=""
-DUE_HOUR=""
-DUE_MINUTE=""
+HAS_DUE=false
+DUE_YEAR=2000
+DUE_MONTH=1
+DUE_DAY=1
+DUE_HOUR=9
+DUE_MINUTE=0
 HAS_TIME=false
 
 if [[ -n "$DUE" ]]; then
+    HAS_DUE=true
     # Check if it includes time
     if [[ "$DUE" =~ ^([0-9]{4})-([0-9]{2})-([0-9]{2})\ ([0-9]{2}):([0-9]{2})$ ]]; then
         # Date with time
@@ -152,7 +154,8 @@ tell application "Reminders"
         end if
 
         -- Set due date using date components (locale-independent)
-        if "$DUE_YEAR" is not "" then
+        set hasDue to "$HAS_DUE"
+        if hasDue is "true" then
             set dueDate to current date
             set year of dueDate to $DUE_YEAR
             set month of dueDate to $DUE_MONTH
@@ -160,12 +163,7 @@ tell application "Reminders"
             set hours of dueDate to $DUE_HOUR
             set minutes of dueDate to $DUE_MINUTE
             set seconds of dueDate to 0
-
-            if $HAS_TIME then
-                set due date of newReminder to dueDate
-            else
-                set allday due date of newReminder to dueDate
-            end if
+            set due date of newReminder to dueDate
         end if
     end tell
 

@@ -308,6 +308,9 @@ You have a persistent memory to track what you've done. USE IT to avoid duplicat
                 else:
                     console.print(f"  [red]✗ Failed[/red]")
                     console.print(f"  [red]Error:[/red] {result.error}")
+            elif not result.success:
+                # Always show errors, even in non-verbose mode
+                console.print(f"[red]  ✗ {tool_call.name} failed:[/red] {result.error}")
 
             # Format and add tool result to messages
             result_str = self._format_tool_result(result)
