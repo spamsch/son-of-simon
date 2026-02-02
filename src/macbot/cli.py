@@ -53,6 +53,52 @@ console = Console()
 MACBOT_DIR = Path.home() / ".macbot"
 PID_FILE = MACBOT_DIR / "scheduler.pid"
 LOG_FILE = MACBOT_DIR / "scheduler.log"
+JOBS_FILE = MACBOT_DIR / "jobs.yaml"
+
+
+def load_jobs_from_file(jobs_file: Path | None = None) -> dict[str, str]:
+    """Load jobs from a YAML file and return a dict of name -> goal.
+
+    Args:
+        jobs_file: Path to jobs YAML file. Defaults to ~/.macbot/jobs.yaml
+
+    Returns:
+        Dictionary mapping job names to their goals
+    """
+    if jobs_file is None:
+        jobs_file = JOBS_FILE
+
+    if not jobs_file.exists():
+        return {}
+
+    try:
+        with open(jobs_file) as f:
+            data = yaml.safe_load(f)
+
+        if not data or "jobs" not in data:
+            return {}
+
+        jobs = {}
+        for job in data["jobs"]:
+            if "name" in job and "goal" in job:
+                jobs[job["name"].lower()] = job["goal"]
+        return jobs
+    except Exception:
+        return {}
+
+
+def find_job_goal(name: str, jobs_file: Path | None = None) -> str | None:
+    """Find a job's goal by name (case-insensitive).
+
+    Args:
+        name: Job name to search for
+        jobs_file: Path to jobs YAML file
+
+    Returns:
+        The job's goal if found, None otherwise
+    """
+    jobs = load_jobs_from_file(jobs_file)
+    return jobs.get(name.lower())
 
 # Help text shown when no command is given
 WELCOME_TEXT = f"""
@@ -191,10 +237,36 @@ def cmd_chat(args: argparse.Namespace) -> None:
 
 def cmd_run(args: argparse.Namespace) -> None:
     """Run a goal, optionally continuing to interactive mode."""
+    # Handle --list-jobs flag
+    if getattr(args, "list_jobs", False):
+        jobs = load_jobs_from_file()
+        if not jobs:
+            console.print("[yellow]No jobs found in ~/.macbot/jobs.yaml[/yellow]")
+        else:
+            console.print(f"[bold]Available jobs[/bold] ({len(jobs)}):\n")
+            for name in sorted(jobs.keys()):
+                # Show original case from file
+                goal_preview = jobs[name].strip().split("\n")[0][:60]
+                console.print(f"  [cyan]{name.title()}[/cyan]")
+                console.print(f"    {goal_preview}...")
+        return
+
+    # Require goal if not listing jobs
+    if not args.goal:
+        console.print("[red]Error:[/red] goal is required (or use --list-jobs)")
+        sys.exit(1)
+
     # Enable debug logging if --debug flag is set
     if getattr(args, "debug", False):
         setup_logging(verbose=True)
         console.print("[dim]Debug mode enabled[/dim]\n")
+
+    # Check if the goal matches a job name from jobs.yaml
+    goal = args.goal
+    job_goal = find_job_goal(goal)
+    if job_goal:
+        console.print(f"[dim]Running job:[/dim] [bold]{goal}[/bold]\n")
+        goal = job_goal
 
     registry = create_default_registry()
     agent = Agent(registry)
@@ -205,9 +277,9 @@ def cmd_run(args: argparse.Namespace) -> None:
         verbose = args.verbose or getattr(args, "debug", False)
 
         if verbose and not stream:
-            console.print(Panel(f"[bold]Goal:[/bold] {args.goal}", title="Running"))
+            console.print(Panel(f"[bold]Goal:[/bold] {goal}", title="Running"))
 
-        result = await agent.run(args.goal, verbose=verbose, stream=stream)
+        result = await agent.run(goal, verbose=verbose, stream=stream)
 
         # When streaming, text was already printed via stream callback
         # Otherwise, print the final result
@@ -1257,12 +1329,20 @@ EXAMPLES:
         "run",
         help="Run a goal (with optional continue to chat)",
         description="Give the agent a goal to achieve. The agent will reason "
-                    "about it and call tasks as needed.",
-        epilog="Example: macbot run \"Check my emails and summarize urgent ones\" -c"
+                    "about it and call tasks as needed. You can also use job names "
+                    "from ~/.macbot/jobs.yaml.",
+        epilog="""Examples:
+  macbot run "Check my emails"              Run a goal
+  macbot run "Morning Briefing"             Run job by name (from jobs.yaml)
+  macbot run --list-jobs                    Show available jobs"""
     )
     run_parser.add_argument(
-        "goal",
-        help="Natural language goal for the agent"
+        "goal", nargs="?", default=None,
+        help="Natural language goal or job name from ~/.macbot/jobs.yaml"
+    )
+    run_parser.add_argument(
+        "--list-jobs", action="store_true",
+        help="List available jobs from ~/.macbot/jobs.yaml"
     )
     run_parser.add_argument(
         "-c", "--continue", dest="continue_chat", action="store_true",
