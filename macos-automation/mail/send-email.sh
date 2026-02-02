@@ -19,7 +19,8 @@
 #   --body-file <file>  Read body from file
 #   --cc <email>        CC recipient (optional)
 #   --bcc <email>       BCC recipient (optional)
-#   --draft             Open as draft instead of sending immediately
+#   --draft             Save as draft (silently, without opening window)
+#   --draft-visible     Save as draft and open compose window for review
 #
 # Example:
 #   ./send-email.sh --to "john@example.com" --subject "Hello" --body "Hi there!"
@@ -36,6 +37,7 @@ BODY=""
 CC=""
 BCC=""
 DRAFT=false
+DRAFT_VISIBLE=false
 
 # Parse arguments
 while [[ $# -gt 0 ]]; do
@@ -72,6 +74,11 @@ while [[ $# -gt 0 ]]; do
             DRAFT=true
             shift
             ;;
+        --draft-visible)
+            DRAFT=true
+            DRAFT_VISIBLE=true
+            shift
+            ;;
         -h|--help)
             head -35 "$0" | tail -30
             exit 0
@@ -93,7 +100,7 @@ BODY_ESCAPED=$(escape_for_applescript "$BODY")
 
 # Build AppleScript
 APPLESCRIPT="tell application \"Mail\"
-    set newMsg to make new outgoing message with properties {subject:\"$SUBJECT_ESCAPED\", content:\"$BODY_ESCAPED\", visible:$DRAFT}
+    set newMsg to make new outgoing message with properties {subject:\"$SUBJECT_ESCAPED\", content:\"$BODY_ESCAPED\", visible:$DRAFT_VISIBLE}
 
     tell newMsg
         make new to recipient at end of to recipients with properties {address:\"$TO\"}"
@@ -116,9 +123,12 @@ if [[ "$DRAFT" == "false" ]]; then
     send newMsg
     return \"Email sent to $TO\""
 else
+    if [[ "$DRAFT_VISIBLE" == "true" ]]; then
+        APPLESCRIPT="$APPLESCRIPT
+    activate"
+    fi
     APPLESCRIPT="$APPLESCRIPT
-    activate
-    return \"Draft created for $TO\""
+    return \"Draft saved for $TO (in Drafts folder)\""
 fi
 
 APPLESCRIPT="$APPLESCRIPT

@@ -200,7 +200,10 @@ class SendEmailTask(Task):
 
     @property
     def description(self) -> str:
-        return "Send an email using Mail.app. Can send immediately or create a draft for review."
+        return (
+            "Send an email using Mail.app. Can send immediately or save as draft. "
+            "Drafts are saved silently to the Drafts folder without opening a window."
+        )
 
     async def execute(
         self,
@@ -209,7 +212,8 @@ class SendEmailTask(Task):
         body: str,
         cc: str | None = None,
         bcc: str | None = None,
-        draft: bool = False
+        draft: bool = False,
+        draft_visible: bool = False
     ) -> dict[str, Any]:
         """Send an email.
 
@@ -219,7 +223,8 @@ class SendEmailTask(Task):
             body: Email body content.
             cc: CC recipient (optional).
             bcc: BCC recipient (optional).
-            draft: If True, open as draft instead of sending immediately.
+            draft: If True, save as draft instead of sending (silently).
+            draft_visible: If True with draft, open compose window for review.
 
         Returns:
             Dictionary with send status.
@@ -230,7 +235,10 @@ class SendEmailTask(Task):
         if bcc:
             args.extend(["--bcc", bcc])
         if draft:
-            args.append("--draft")
+            if draft_visible:
+                args.append("--draft-visible")
+            else:
+                args.append("--draft")
 
         return await run_script("mail/send-email.sh", args)
 
