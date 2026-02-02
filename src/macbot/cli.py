@@ -1270,6 +1270,131 @@ def cmd_cron_clear(args: argparse.Namespace) -> None:
     console.print(f"[green]Cleared {len(jobs)} jobs[/green]")
 
 
+# Memory commands
+def parse_time_range(time_str: str) -> tuple[int, int]:
+    """Parse a time range string like '1h', '30m', '2d' into hours and minutes.
+
+    Args:
+        time_str: Time string (e.g., '1h', '30m', '2d', '1h30m')
+
+    Returns:
+        Tuple of (hours, minutes)
+
+    Raises:
+        ValueError: If the format is invalid
+    """
+    import re
+
+    time_str = time_str.lower().strip()
+    hours = 0
+    minutes = 0
+
+    # Match patterns like 1h, 30m, 2d, 1h30m
+    pattern = r'(?:(\d+)d)?(?:(\d+)h)?(?:(\d+)m)?'
+    match = re.fullmatch(pattern, time_str)
+
+    if not match or not any(match.groups()):
+        raise ValueError(f"Invalid time format: {time_str}. Use format like 1h, 30m, 2d, 1h30m")
+
+    days, hrs, mins = match.groups()
+    if days:
+        hours += int(days) * 24
+    if hrs:
+        hours += int(hrs)
+    if mins:
+        minutes += int(mins)
+
+    return hours, minutes
+
+
+def cmd_memory_reset(args: argparse.Namespace) -> None:
+    """Reset memory entries from a specified time range."""
+    from macbot.memory import AgentMemory
+
+    try:
+        hours, minutes = parse_time_range(args.time_range)
+    except ValueError as e:
+        console.print(f"[red]Error:[/red] {e}")
+        sys.exit(1)
+
+    total_minutes = hours * 60 + minutes
+    if total_minutes <= 0:
+        console.print("[red]Error:[/red] Time range must be positive")
+        sys.exit(1)
+
+    memory = AgentMemory()
+
+    # Show what will be deleted
+    time_desc = ""
+    if hours > 0:
+        time_desc += f"{hours}h"
+    if minutes > 0:
+        time_desc += f"{minutes}m"
+
+    if not args.yes:
+        console.print(f"[yellow]This will delete all memory entries from the last {time_desc}.[/yellow]")
+        response = console.input("Continue? [y/N]: ").strip().lower()
+        if response != "y":
+            console.print("[dim]Aborted[/dim]")
+            return
+
+    result = memory.clear_recent_records(hours=hours, minutes=minutes)
+
+    console.print(f"[green]Cleared {result['total']} records:[/green]")
+    console.print(f"  Emails: {result['emails_deleted']}")
+    console.print(f"  Reminders: {result['reminders_deleted']}")
+
+
+def cmd_memory_show(args: argparse.Namespace) -> None:
+    """Show memory contents and statistics."""
+    from macbot.memory import AgentMemory
+
+    memory = AgentMemory()
+
+    days = args.days or 7
+    summary = memory.get_summary(days=days)
+
+    console.print(f"\n[bold]Agent Memory[/bold] (last {days} days)\n")
+    console.print(f"  Emails processed: {summary['emails_processed']}")
+    console.print(f"  Reminders created: {summary['reminders_created']}")
+
+    if summary['actions_breakdown']:
+        console.print("\n  Actions breakdown:")
+        for action, count in sorted(summary['actions_breakdown'].items()):
+            console.print(f"    {action}: {count}")
+
+    if args.verbose:
+        console.print(f"\n[dim]Database: {memory.db_path}[/dim]")
+
+        # Show recent entries
+        emails = memory.get_processed_emails(limit=10, days=days)
+        if emails:
+            console.print(f"\n[bold]Recent processed emails:[/bold]")
+            for email in emails:
+                console.print(f"  [{email['processed_at'][:16]}] {email['subject'][:50]}")
+                console.print(f"    Action: {email['action_taken'] or 'reviewed'}")
+
+
+def cmd_memory_clear(args: argparse.Namespace) -> None:
+    """Clear all memory entries."""
+    from macbot.memory import AgentMemory
+
+    memory = AgentMemory()
+
+    if not args.yes:
+        summary = memory.get_summary(days=9999)
+        total = summary['emails_processed'] + summary['reminders_created']
+        console.print(f"[yellow]This will delete ALL {total} memory entries.[/yellow]")
+        response = console.input("Continue? [y/N]: ").strip().lower()
+        if response != "y":
+            console.print("[dim]Aborted[/dim]")
+            return
+
+    # Delete everything by using a very large time range
+    result = memory.clear_recent_records(hours=999999)
+    console.print(f"[green]Cleared all memory ({result['total']} records)[/green]")
+
+
 def main() -> NoReturn:
     """Main entry point for MacBot CLI."""
     parser = argparse.ArgumentParser(
@@ -1584,6 +1709,68 @@ EXAMPLES:
     )
     cron_clear.set_defaults(func=cmd_cron_clear)
 
+    # Memory command group
+    memory_parser = subparsers.add_parser(
+        "memory",
+        help="Manage agent memory (processed emails, created reminders)",
+        description="View and manage the agent's persistent memory that tracks "
+                    "processed emails and created reminders."
+    )
+    memory_subparsers = memory_parser.add_subparsers(dest="memory_command", metavar="SUBCOMMAND")
+
+    # memory show
+    memory_show = memory_subparsers.add_parser(
+        "show",
+        help="Show memory statistics and recent entries",
+        description="Display statistics about what the agent has processed."
+    )
+    memory_show.add_argument(
+        "--days", type=int, default=7,
+        help="Number of days to show (default: 7)"
+    )
+    memory_show.add_argument(
+        "-v", "--verbose", action="store_true",
+        help="Show detailed entries"
+    )
+    memory_show.set_defaults(func=cmd_memory_show)
+
+    # memory reset
+    memory_reset = memory_subparsers.add_parser(
+        "reset",
+        help="Clear recent memory entries",
+        description="Delete memory entries from the specified time range. "
+                    "Use this to re-process emails that were recently handled.",
+        epilog="""Time format examples:
+  1h      Last 1 hour
+  30m     Last 30 minutes
+  2d      Last 2 days
+  1h30m   Last 1 hour 30 minutes
+
+Example:
+  macbot memory reset 1h      # Clear entries from last hour"""
+    )
+    memory_reset.add_argument(
+        "time_range",
+        help="Time range to clear (e.g., 1h, 30m, 2d, 1h30m)"
+    )
+    memory_reset.add_argument(
+        "-y", "--yes", action="store_true",
+        help="Skip confirmation"
+    )
+    memory_reset.set_defaults(func=cmd_memory_reset)
+
+    # memory clear
+    memory_clear = memory_subparsers.add_parser(
+        "clear",
+        help="Clear ALL memory entries",
+        description="Delete all memory entries. Use with caution."
+    )
+    memory_clear.add_argument(
+        "-y", "--yes", action="store_true",
+        help="Skip confirmation"
+    )
+    memory_clear.set_defaults(func=cmd_memory_clear)
+
     args = parser.parse_args()
     setup_logging(args.verbose)
 
@@ -1609,6 +1796,11 @@ EXAMPLES:
     # Handle cron subcommands
     if args.command == "cron" and args.cron_command is None:
         cron_parser.print_help()
+        sys.exit(0)
+
+    # Handle memory subcommands
+    if args.command == "memory" and args.memory_command is None:
+        memory_parser.print_help()
         sys.exit(0)
 
     args.func(args)

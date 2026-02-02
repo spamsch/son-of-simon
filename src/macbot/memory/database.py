@@ -315,3 +315,41 @@ class AgentMemory:
             reminders_deleted = cursor.rowcount
 
             return emails_deleted + reminders_deleted
+
+    def clear_recent_records(self, hours: int = 0, minutes: int = 0) -> dict[str, int]:
+        """Clear records newer than specified time ago.
+
+        Use this to "undo" recent processing and allow re-processing of emails.
+
+        Args:
+            hours: Delete records from the last N hours
+            minutes: Additional minutes to add
+
+        Returns:
+            Dictionary with counts of deleted records by type
+        """
+        # Convert to minutes for SQLite
+        total_minutes = hours * 60 + minutes
+        if total_minutes <= 0:
+            return {"emails_deleted": 0, "reminders_deleted": 0}
+
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.execute(
+                """DELETE FROM emails_processed
+                   WHERE processed_at >= datetime('now', ?)""",
+                (f"-{total_minutes} minutes",)
+            )
+            emails_deleted = cursor.rowcount
+
+            cursor = conn.execute(
+                """DELETE FROM reminders_created
+                   WHERE created_at >= datetime('now', ?)""",
+                (f"-{total_minutes} minutes",)
+            )
+            reminders_deleted = cursor.rowcount
+
+            return {
+                "emails_deleted": emails_deleted,
+                "reminders_deleted": reminders_deleted,
+                "total": emails_deleted + reminders_deleted,
+            }
