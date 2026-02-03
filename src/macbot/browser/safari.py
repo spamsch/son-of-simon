@@ -325,6 +325,28 @@ class SafariBrowser:
         result = await _run_script("physical-click.sh", [ref])
         return BrowserResult.from_json(result)
 
+    async def execute_js(self, code: str) -> dict[str, Any]:
+        """Execute JavaScript code in the current Safari tab.
+
+        Useful for extracting data from web pages or performing
+        custom interactions that aren't covered by other methods.
+
+        Args:
+            code: JavaScript code to execute. The result should be
+                  a string or JSON-serializable value.
+
+        Returns:
+            Dictionary with 'success' and 'result' keys.
+
+        Example:
+            result = await browser.execute_js("document.title")
+            result = await browser.execute_js('''
+                JSON.stringify(Array.from(document.querySelectorAll('h1'))
+                    .map(h => h.textContent))
+            ''')
+        """
+        return await _run_script("execute-js.sh", [code], timeout=30)
+
     async def visual_snapshot(
         self, output_path: str = "/tmp/visual_snapshot.png", max_elements: int = 80
     ) -> dict[str, Any]:

@@ -322,6 +322,50 @@ class BrowserGetTextTask(Task):
             return {"success": False, "error": str(e)}
 
 
+class BrowserExecuteJsTask(Task):
+    """Execute JavaScript code in the current Safari tab."""
+
+    @property
+    def name(self) -> str:
+        return "browser_execute_js"
+
+    @property
+    def description(self) -> str:
+        return (
+            "Execute JavaScript code in Safari and return the result. "
+            "Useful for extracting data from web pages that isn't visible in snapshots. "
+            "The JavaScript should return a string or use JSON.stringify() for complex data."
+        )
+
+    async def execute(self, code: str) -> dict[str, Any]:
+        """Execute JavaScript.
+
+        Args:
+            code: JavaScript code to execute. Use JSON.stringify() for complex results.
+
+        Returns:
+            Dictionary with 'success' and 'result' keys.
+
+        Example:
+            # Get page title
+            browser_execute_js(code="document.title")
+
+            # Extract data from elements
+            browser_execute_js(code='''
+                JSON.stringify(
+                    Array.from(document.querySelectorAll('.price'))
+                        .map(el => el.textContent)
+                )
+            ''')
+        """
+        browser = _get_browser()
+        try:
+            result = await browser.execute_js(code)
+            return result
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+
 # =============================================================================
 # UTILITIES
 # =============================================================================
@@ -616,6 +660,7 @@ def register_browser_tasks(registry) -> None:
     registry.register(BrowserSelectTask())
     registry.register(BrowserScrollToTask())
     registry.register(BrowserGetTextTask())
+    registry.register(BrowserExecuteJsTask())
     registry.register(BrowserScreenshotTask())
     registry.register(BrowserCloseTabTask())
     registry.register(BrowserDismissCookiesTask())
