@@ -2,16 +2,20 @@
 
 Provides tools for the agent to track what it has done - processed emails,
 created reminders, etc. Uses a SQLite database for persistence.
+
+Also provides tools for managing knowledge memory - lessons learned, user
+preferences, and user facts stored in YAML format.
 """
 
 import json
 from typing import Any
 
-from macbot.memory import AgentMemory
+from macbot.memory import AgentMemory, KnowledgeMemory
 from macbot.tasks.base import Task
 
-# Singleton memory instance
+# Singleton memory instances
 _memory: AgentMemory | None = None
+_knowledge: KnowledgeMemory | None = None
 
 
 def get_memory() -> AgentMemory:
@@ -20,6 +24,14 @@ def get_memory() -> AgentMemory:
     if _memory is None:
         _memory = AgentMemory()
     return _memory
+
+
+def get_knowledge() -> KnowledgeMemory:
+    """Get the shared knowledge memory instance."""
+    global _knowledge
+    if _knowledge is None:
+        _knowledge = KnowledgeMemory()
+    return _knowledge
 
 
 class CheckEmailProcessedTask(Task):
@@ -238,14 +250,188 @@ class GetAgentMemorySummaryTask(Task):
         }
 
 
+class MemoryAddLessonTask(Task):
+    """Add a lesson learned to knowledge memory."""
+
+    @property
+    def name(self) -> str:
+        return "memory_add_lesson"
+
+    @property
+    def description(self) -> str:
+        return (
+            "Add a lesson learned to persistent memory. Use this to remember techniques, "
+            "workarounds, or important discoveries that should be recalled in future sessions. "
+            "If a lesson with the same topic exists, it will be updated."
+        )
+
+    async def execute(self, topic: str, lesson: str) -> dict[str, Any]:
+        """Add a lesson learned.
+
+        Args:
+            topic: Short topic identifier (e.g., "React inputs", "Booking.com automation")
+            lesson: The lesson content describing what was learned
+
+        Returns:
+            Dictionary with result
+        """
+        knowledge = get_knowledge()
+        knowledge.add_lesson(topic, lesson)
+        return {
+            "success": True,
+            "topic": topic,
+            "lesson": lesson,
+            "message": f"Lesson added for topic: {topic}",
+        }
+
+
+class MemorySetPreferenceTask(Task):
+    """Set a user preference in knowledge memory."""
+
+    @property
+    def name(self) -> str:
+        return "memory_set_preference"
+
+    @property
+    def description(self) -> str:
+        return (
+            "Set or update a user preference in persistent memory. Use this to remember "
+            "how the user likes things done - output format, default values, personal preferences. "
+            "Replaces any existing preference in the same category."
+        )
+
+    async def execute(self, category: str, preference: str) -> dict[str, Any]:
+        """Set a user preference.
+
+        Args:
+            category: Category of preference (e.g., "output", "hotels", "communication")
+            preference: The preference description
+
+        Returns:
+            Dictionary with result
+        """
+        knowledge = get_knowledge()
+        knowledge.set_preference(category, preference)
+        return {
+            "success": True,
+            "category": category,
+            "preference": preference,
+            "message": f"Preference set for category: {category}",
+        }
+
+
+class MemoryAddFactTask(Task):
+    """Add a fact about the user to knowledge memory."""
+
+    @property
+    def name(self) -> str:
+        return "memory_add_fact"
+
+    @property
+    def description(self) -> str:
+        return (
+            "Add a fact about the user to persistent memory. Use this to remember "
+            "personal information that might be relevant in future interactions - "
+            "location, language, time zone, etc. Skips if the exact fact already exists."
+        )
+
+    async def execute(self, fact: str) -> dict[str, Any]:
+        """Add a user fact.
+
+        Args:
+            fact: The fact to remember (e.g., "Lives in Germany", "Prefers metric units")
+
+        Returns:
+            Dictionary with result
+        """
+        knowledge = get_knowledge()
+        knowledge.add_fact(fact)
+        return {
+            "success": True,
+            "fact": fact,
+            "message": f"Fact added: {fact}",
+        }
+
+
+class MemoryListTask(Task):
+    """List current knowledge memory contents."""
+
+    @property
+    def name(self) -> str:
+        return "memory_list"
+
+    @property
+    def description(self) -> str:
+        return (
+            "List all current knowledge memory contents - lessons learned, user preferences, "
+            "and user facts. Use this to see what has been remembered across sessions."
+        )
+
+    async def execute(self) -> dict[str, Any]:
+        """List all knowledge memory.
+
+        Returns:
+            Dictionary with all memory contents
+        """
+        knowledge = get_knowledge()
+        data = knowledge.get_all()
+        return {
+            "success": True,
+            "lessons_learned": data.get("lessons_learned", []),
+            "user_preferences": data.get("user_preferences", []),
+            "user_facts": data.get("user_facts", []),
+        }
+
+
+class MemoryRemoveLessonTask(Task):
+    """Remove a lesson from knowledge memory."""
+
+    @property
+    def name(self) -> str:
+        return "memory_remove_lesson"
+
+    @property
+    def description(self) -> str:
+        return (
+            "Remove a lesson learned from persistent memory by its topic. "
+            "Use this to clear outdated or incorrect lessons."
+        )
+
+    async def execute(self, topic: str) -> dict[str, Any]:
+        """Remove a lesson by topic.
+
+        Args:
+            topic: The topic of the lesson to remove
+
+        Returns:
+            Dictionary with result
+        """
+        knowledge = get_knowledge()
+        removed = knowledge.remove_lesson(topic)
+        return {
+            "success": True,
+            "topic": topic,
+            "removed": removed,
+            "message": f"Lesson removed" if removed else f"No lesson found with topic: {topic}",
+        }
+
+
 def register_memory_tasks(registry) -> None:
     """Register all memory tasks with a registry.
 
     Args:
         registry: TaskRegistry to register tasks with.
     """
+    # Email/reminder tracking tasks (SQLite-based)
     registry.register(CheckEmailProcessedTask())
     registry.register(MarkEmailProcessedTask())
     registry.register(ListProcessedEmailsTask())
     registry.register(RecordReminderCreatedTask())
     registry.register(GetAgentMemorySummaryTask())
+
+    # Knowledge memory tasks (YAML-based)
+    registry.register(MemoryAddLessonTask())
+    registry.register(MemorySetPreferenceTask())
+    registry.register(MemoryAddFactTask())
+    registry.register(MemoryListTask())
+    registry.register(MemoryRemoveLessonTask())

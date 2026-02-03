@@ -241,9 +241,33 @@ You have a persistent memory to track what you've done. USE IT to avoid duplicat
   - `move_email` NOT osascript for moving emails
   - `download_attachments` NOT osascript for attachments
 - If a dedicated tool fails, report the error. Do NOT work around it with run_shell_command.
+
+## Knowledge Memory Management
+
+You can store and retrieve persistent knowledge:
+- `memory_add_lesson(topic, lesson)` - Remember a technique or important discovery
+- `memory_set_preference(category, preference)` - Store how the user likes things done
+- `memory_add_fact(fact)` - Remember personal information about the user
+- `memory_list()` - See all stored knowledge
+- `memory_remove_lesson(topic)` - Remove an outdated lesson
+
+Use these when:
+- The user explicitly asks you to remember something
+- You discover a workaround or technique worth recalling
+- The user expresses a preference for how things should be done
+- You learn factual information about the user (location, preferences, etc.)
 """
 
-        return base_prompt + system_info + tool_text + guidance
+        prompt_parts = [base_prompt + system_info + tool_text + guidance]
+
+        # Load knowledge memory if it exists
+        from macbot.memory import KnowledgeMemory
+        knowledge = KnowledgeMemory()
+        memory_text = knowledge.format_for_prompt()
+        if memory_text:
+            prompt_parts.append("\n" + memory_text)
+
+        return "".join(prompt_parts)
 
     async def _get_llm_response(self, stream: bool = False, verbose: bool = False) -> LLMResponse:
         """Get a response from the LLM."""
