@@ -7,6 +7,10 @@ from typing import Any
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+# Macbot config directory
+MACBOT_DIR = Path.home() / ".macbot"
+MACBOT_ENV_FILE = MACBOT_DIR / ".env"
+
 
 class LLMProviderType(str, Enum):
     """Supported LLM providers."""
@@ -20,7 +24,10 @@ class Settings(BaseSettings):
 
     model_config = SettingsConfigDict(
         env_prefix="MACBOT_",
-        env_file=".env",
+        # Load from multiple locations (later files override earlier)
+        # 1. ~/.macbot/.env (user config from onboard)
+        # 2. .env in current directory (project-specific override)
+        env_file=(str(MACBOT_ENV_FILE), ".env"),
         env_file_encoding="utf-8",
         extra="ignore",
     )

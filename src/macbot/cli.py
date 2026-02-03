@@ -1008,9 +1008,7 @@ def cmd_onboard(args: argparse.Namespace) -> None:
                 f.write(f"{key}={value}\n")
 
         console.print(f"[green]✓[/green] Saved to {env_file}")
-        console.print("\n[yellow]Note:[/yellow] To use the new configuration, either:")
-        console.print(f"  • Run: [bold]source {env_file}[/bold]")
-        console.print(f"  • Or add to your shell profile: [bold]source {env_file}[/bold]")
+        console.print("[dim]Configuration will be loaded automatically on next run.[/dim]")
 
         # Source the env file for this session
         for key, value in env_vars.items():
