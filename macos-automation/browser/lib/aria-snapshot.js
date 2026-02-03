@@ -516,7 +516,8 @@
   }
 
   /**
-   * Type text into element by ref (with human-like character-by-character input)
+   * Type text into element by ref (with React-compatible native setter)
+   * Uses the native input value setter to bypass React's controlled component behavior
    */
   function typeByRef(ref, text, options = {}) {
     const { clear = true, submit = false } = options;
@@ -539,18 +540,42 @@
       // Focus
       el.focus();
 
-      // Clear if requested (simulate Ctrl+A then Delete)
-      if (clear && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA')) {
-        el.value = '';
+      // Get the native setter for React compatibility
+      // React overrides the value property, so we need to use the native setter
+      // to properly trigger React's onChange handlers
+      const isInput = el.tagName === 'INPUT';
+      const isTextarea = el.tagName === 'TEXTAREA';
+      let nativeSetter = null;
+
+      if (isInput) {
+        nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set;
+      } else if (isTextarea) {
+        nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value')?.set;
+      }
+
+      // Clear if requested
+      if (clear && (isInput || isTextarea)) {
+        if (nativeSetter) {
+          nativeSetter.call(el, '');
+        } else {
+          el.value = '';
+        }
         el.dispatchEvent(new Event('input', { bubbles: true }));
       }
 
-      // Type character by character (simulates real typing)
-      for (let i = 0; i < text.length; i++) {
-        simulateKeyPress(el, text[i]);
+      // Set the final value using native setter (React-compatible)
+      if (nativeSetter && (isInput || isTextarea)) {
+        nativeSetter.call(el, text);
+      } else if (el.getAttribute('contenteditable') === 'true') {
+        el.textContent = text;
+      } else {
+        el.value = text;
       }
 
-      // Final change event
+      // Dispatch input event - this triggers React's onChange
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+
+      // Also dispatch change event for good measure
       el.dispatchEvent(new Event('change', { bubbles: true }));
 
       // Submit if requested
@@ -569,7 +594,7 @@
         }
       }
 
-      return { success: true };
+      return { success: true, value: text };
     } catch (err) {
       return { success: false, error: err.message };
     }

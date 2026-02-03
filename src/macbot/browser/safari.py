@@ -306,6 +306,25 @@ class SafariBrowser:
         result = await _run_script("press-key.sh", [key])
         return BrowserResult.from_json(result)
 
+    async def physical_click(self, ref: str) -> BrowserResult:
+        """Perform a physical mouse click on an element.
+
+        Uses cliclick to bypass anti-bot detection that blocks synthetic
+        JavaScript click events. Useful for sites like Booking.com.
+
+        Prerequisites:
+            - cliclick must be installed (brew install cliclick)
+            - ARIA library must be loaded (run snapshot first)
+
+        Args:
+            ref: Element reference (e.g., "e21")
+
+        Returns:
+            BrowserResult with click coordinates
+        """
+        result = await _run_script("physical-click.sh", [ref])
+        return BrowserResult.from_json(result)
+
     async def visual_snapshot(
         self, output_path: str = "/tmp/visual_snapshot.png", max_elements: int = 80
     ) -> dict[str, Any]:
