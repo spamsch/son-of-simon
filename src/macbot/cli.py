@@ -771,11 +771,19 @@ def cmd_onboard(args: argparse.Namespace) -> None:
     if not has_anthropic and not has_openai:
         choice = prompt_choice(
             "Which LLM provider would you like to use?",
-            ["Anthropic (Claude) - Recommended", "OpenAI (GPT-4)"],
+            ["OpenAI (GPT-5.2) - Recommended", "Anthropic (Claude)"],
             default=1,
         )
 
         if choice == 1:
+            console.print("\nGet your API key from: [link]https://platform.openai.com/api-keys[/link]")
+            api_key = prompt_secret("Enter your OpenAI API key")
+            if api_key:
+                env_vars["MACBOT_LLM_PROVIDER"] = "openai"
+                env_vars["MACBOT_OPENAI_API_KEY"] = api_key
+                env_vars["MACBOT_OPENAI_MODEL"] = "gpt-5.2"
+                console.print("[green]✓ API key saved[/green]")
+        else:
             console.print("\nGet your API key from: [link]https://console.anthropic.com/[/link]")
             api_key = prompt_secret("Enter your Anthropic API key")
             if api_key:
@@ -791,13 +799,6 @@ def cmd_onboard(args: argparse.Namespace) -> None:
                     console.print("[green]✓ Valid[/green]")
                 except Exception as e:
                     console.print(f"[yellow]Warning: {e}[/yellow]")
-        else:
-            console.print("\nGet your API key from: [link]https://platform.openai.com/api-keys[/link]")
-            api_key = prompt_secret("Enter your OpenAI API key")
-            if api_key:
-                env_vars["MACBOT_LLM_PROVIDER"] = "openai"
-                env_vars["MACBOT_OPENAI_API_KEY"] = api_key
-                console.print("[green]✓ API key saved[/green]")
 
     # =========================================================================
     # Step 2: macOS Permissions
