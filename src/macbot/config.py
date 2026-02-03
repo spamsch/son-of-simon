@@ -128,6 +128,20 @@ class Settings(BaseSettings):
         description="Drop policy when queue is full: old, new, or summarize",
     )
 
+    # Telegram settings
+    telegram_bot_token: str = Field(
+        default="",
+        description="Telegram bot token from @BotFather",
+    )
+    telegram_chat_id: str = Field(
+        default="",
+        description="Default Telegram chat ID for sending messages",
+    )
+    telegram_allowed_users: list[str] = Field(
+        default_factory=list,
+        description="List of allowed Telegram user IDs (empty = allow all)",
+    )
+
     def get_provider_config(self) -> dict[str, Any]:
         """Get configuration for the selected LLM provider."""
         if self.llm_provider == LLMProviderType.ANTHROPIC:

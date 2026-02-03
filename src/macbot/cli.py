@@ -109,31 +109,20 @@ An LLM-powered agent for macOS automation.
 ## Quick Start
 
 ```bash
-macbot chat                              # Interactive conversation
-macbot run "Check my emails" -c          # Run goal, then chat
-macbot run "What's on my calendar?"      # Run goal and exit
-macbot task get_unread_emails            # Execute task directly
-macbot tasks                             # List available tasks
+macbot run "Check my emails"             # Run a goal
+macbot run "What's on my calendar?"      # Ask a question
+macbot start                             # Start service (cron + telegram)
+macbot status                            # Check service status
+macbot doctor                            # Verify setup
 ```
 
-## Concepts
+## Service Setup
 
-| Concept | What it is | Example |
-|---------|------------|---------|
-| **Task** | Single action, no LLM | `macbot task get_today_events` |
-| **Goal** | Natural language → LLM reasons → calls tasks | `macbot run "Summarize my emails"` |
-| **Chat** | Interactive conversation, context preserved | `macbot chat` |
-| **Job** | Goal + Schedule = automatic execution | `macbot cron start -b` |
+1. Import scheduled jobs: `macbot cron import jobs.yaml`
+2. Configure Telegram: `export MACBOT_TELEGRAM_BOT_TOKEN=...`
+3. Start the service: `macbot start -d` (daemon) or `macbot start` (foreground)
 
-**Task vs Goal**: A task is a specific tool (like `get_unread_emails`). A goal is
-what you want to achieve ("check my emails and flag urgent ones")—the agent
-figures out which tasks to call.
-
-**Job**: Wraps a goal with a schedule to run it automatically. Define jobs in a
-YAML file and import them with `macbot cron import jobs.yaml`, then start the
-scheduler with `macbot cron start`.
-
-Use `macbot <command> --help` for detailed help.
+Use `macbot --help-all` to see all commands including admin tools.
 """
 
 
@@ -626,6 +615,72 @@ def cmd_version(args: argparse.Namespace) -> None:
     console.print(f"Tasks available: {len(registry)}")
 
 
+# Unified service commands
+def cmd_start(args: argparse.Namespace) -> None:
+    """Start the macbot service (cron + telegram)."""
+    from macbot.service import run_service
+    run_service(daemon=args.daemon, verbose=args.verbose)
+
+
+def cmd_stop(args: argparse.Namespace) -> None:
+    """Stop the macbot service."""
+    from macbot.service import get_service_pid, stop_service
+
+    pid = get_service_pid()
+    if not pid:
+        console.print("[yellow]Service is not running[/yellow]")
+        return
+
+    console.print(f"Stopping service (PID {pid})...")
+    if stop_service():
+        console.print("[green]Service stopped[/green]")
+    else:
+        console.print("[yellow]Service may still be shutting down[/yellow]")
+
+
+def cmd_status(args: argparse.Namespace) -> None:
+    """Show macbot service status."""
+    from macbot.service import LOG_FILE, MacbotService, get_service_pid
+
+    pid = get_service_pid()
+
+    # Service running status
+    if pid:
+        console.print(f"[green]Service is running[/green] (PID {pid})")
+    else:
+        console.print("[yellow]Service is not running[/yellow]")
+
+    # Get configuration status
+    service = MacbotService()
+    status = service.get_status()
+
+    console.print(f"\n[bold]Cron Jobs[/bold]")
+    if status["cron"]["jobs_total"] > 0:
+        console.print(f"  Jobs: {status['cron']['jobs_enabled']} enabled / {status['cron']['jobs_total']} total")
+    else:
+        console.print(f"  [dim]No jobs configured[/dim]")
+        console.print(f"  [dim]→ Use 'macbot cron import <file>' to add jobs[/dim]")
+
+    console.print(f"\n[bold]Telegram[/bold]")
+    if status["telegram"]["enabled"]:
+        chat_id = status["telegram"].get("chat_id")
+        if chat_id:
+            console.print(f"  Chat ID: {chat_id}")
+        else:
+            console.print(f"  [yellow]Chat ID not set[/yellow]")
+            console.print(f"  [dim]→ Run 'macbot telegram whoami' to get your chat ID[/dim]")
+    else:
+        console.print(f"  [dim]Not configured[/dim]")
+        console.print(f"  [dim]→ Set MACBOT_TELEGRAM_BOT_TOKEN to enable[/dim]")
+
+    # Show recent log if running
+    if pid and LOG_FILE.exists():
+        console.print(f"\n[bold]Recent Log[/bold]")
+        lines = LOG_FILE.read_text().strip().split("\n")
+        for line in lines[-5:]:
+            console.print(f"  [dim]{line}[/dim]")
+
+
 def cmd_doctor(args: argparse.Namespace) -> None:
     """Check system prerequisites and configuration."""
     import platform
@@ -824,6 +879,49 @@ def cmd_doctor(args: argparse.Namespace) -> None:
 
     console.print(f"    [dim]System tasks: {len(system_tasks)}[/dim]")
     console.print(f"    [dim]macOS tasks: {len(macos_tasks)}[/dim]")
+
+    # Telegram Integration
+    console.print("\n[bold]Telegram Integration[/bold]")
+
+    if settings.telegram_bot_token:
+        # Token format check
+        if ":" not in settings.telegram_bot_token:
+            check("Token Format", False, "Invalid format (expected ID:SECRET)")
+        else:
+            masked = settings.telegram_bot_token[:8] + "..." + settings.telegram_bot_token[-4:]
+            check("Token", True, masked)
+
+            # Test API connection
+            async def _test_telegram() -> tuple[bool, str]:
+                from macbot.telegram.bot import validate_token
+                return await validate_token(settings.telegram_bot_token)
+
+            try:
+                ok, msg = asyncio.run(_test_telegram())
+                if ok:
+                    check("API Connection", True, f"Connected as {msg}")
+                else:
+                    check("API Connection", False, msg)
+            except Exception as e:
+                check("API Connection", False, str(e)[:50])
+
+        # Chat ID check
+        if settings.telegram_chat_id:
+            check("Chat ID", True, settings.telegram_chat_id)
+        else:
+            warn("Chat ID", "Not configured",
+                 "Run 'macbot telegram whoami' to get your chat ID")
+
+        # Service status
+        telegram_pid = _get_telegram_pid()
+        if telegram_pid:
+            check("Service", True, f"Running (PID {telegram_pid})")
+        else:
+            warn("Service", "Not running",
+                 "Start with 'macbot telegram start'")
+    else:
+        warn("Telegram", "Not configured",
+             "Set MACBOT_TELEGRAM_BOT_TOKEN to enable")
 
     # Summary
     console.print()
@@ -1395,70 +1493,362 @@ def cmd_memory_clear(args: argparse.Namespace) -> None:
     console.print(f"[green]Cleared all memory ({result['total']} records)[/green]")
 
 
+# Telegram commands
+TELEGRAM_PID_FILE = MACBOT_DIR / "telegram.pid"
+TELEGRAM_LOG_FILE = MACBOT_DIR / "telegram.log"
+
+
+def _get_telegram_pid() -> int | None:
+    """Get the PID of a running Telegram service, or None if not running."""
+    if not TELEGRAM_PID_FILE.exists():
+        return None
+    try:
+        pid = int(TELEGRAM_PID_FILE.read_text().strip())
+        os.kill(pid, 0)
+        return pid
+    except (ValueError, ProcessLookupError, PermissionError):
+        TELEGRAM_PID_FILE.unlink(missing_ok=True)
+        return None
+
+
+def cmd_telegram_start(args: argparse.Namespace) -> None:
+    """Start the Telegram service."""
+    from macbot.telegram import TelegramService
+
+    if not settings.telegram_bot_token:
+        console.print("[red]Error:[/red] MACBOT_TELEGRAM_BOT_TOKEN not set")
+        console.print("  1. Create a bot via @BotFather on Telegram")
+        console.print("  2. Set the token: export MACBOT_TELEGRAM_BOT_TOKEN='your-token'")
+        sys.exit(1)
+
+    # Check if already running
+    existing_pid = _get_telegram_pid()
+    if existing_pid and args.daemon:
+        console.print(f"[yellow]Telegram service already running[/yellow] (PID {existing_pid})")
+        console.print("Stop it first with: macbot telegram stop")
+        sys.exit(1)
+
+    # Validate token first
+    async def _validate() -> tuple[bool, str]:
+        from macbot.telegram.bot import validate_token
+        return await validate_token(settings.telegram_bot_token)
+
+    ok, msg = asyncio.run(_validate())
+    if not ok:
+        console.print(f"[red]Invalid token:[/red] {msg}")
+        sys.exit(1)
+
+    console.print(f"[green]Connected as {msg}[/green]")
+
+    if not settings.telegram_chat_id:
+        console.print("[yellow]Warning:[/yellow] MACBOT_TELEGRAM_CHAT_ID not set")
+        console.print("  Run 'macbot telegram whoami' to get your chat ID")
+
+    if args.daemon:
+        # Background mode
+        console.print(f"\n[green]Starting Telegram service in background...[/green]")
+        console.print(f"  Log: {TELEGRAM_LOG_FILE}")
+        console.print(f"\nUse 'macbot telegram stop' to stop")
+
+        _daemonize()
+
+        # Update PID file location for telegram
+        TELEGRAM_PID_FILE.write_text(str(os.getpid()))
+
+        # Redirect to telegram log
+        log_fd = os.open(str(TELEGRAM_LOG_FILE), os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o644)
+        os.dup2(log_fd, sys.stdout.fileno())
+        os.dup2(log_fd, sys.stderr.fileno())
+        os.close(log_fd)
+
+        print(f"\n{'='*60}")
+        print(f"MacBot Telegram Service started at {datetime.now().isoformat()}")
+        print(f"PID: {os.getpid()}")
+        print(f"{'='*60}\n")
+
+        def handle_signal(signum, frame):
+            print(f"\nReceived signal {signum}, shutting down...")
+            TELEGRAM_PID_FILE.unlink(missing_ok=True)
+            sys.exit(0)
+
+        signal.signal(signal.SIGTERM, handle_signal)
+        signal.signal(signal.SIGINT, handle_signal)
+
+        # Create service and run
+        service = TelegramService(
+            bot_token=settings.telegram_bot_token,
+            chat_id=settings.telegram_chat_id or None,
+            allowed_users=settings.telegram_allowed_users or None,
+        )
+
+        registry = create_default_registry()
+        agent = Agent(registry)
+
+        async def message_handler(text: str, chat_id: str) -> str:
+            print(f"\n[{datetime.now().isoformat()}] Message from {chat_id}: {text[:50]}...")
+            try:
+                result = await agent.run(text, stream=False)
+                print(f"Response: {result[:100]}...")
+                return result
+            except Exception as e:
+                print(f"Error: {e}")
+                return f"Error: {e}"
+
+        service.set_message_handler(message_handler)
+
+        try:
+            asyncio.run(service.start(write_pid=False))
+        finally:
+            TELEGRAM_PID_FILE.unlink(missing_ok=True)
+
+    else:
+        # Foreground mode
+        console.print(f"\n[dim]Starting Telegram service (press Ctrl+C to stop)...[/dim]\n")
+
+        service = TelegramService(
+            bot_token=settings.telegram_bot_token,
+            chat_id=settings.telegram_chat_id or None,
+            allowed_users=settings.telegram_allowed_users or None,
+        )
+
+        registry = create_default_registry()
+        agent = Agent(registry)
+
+        async def message_handler(text: str, chat_id: str) -> str:
+            console.print(f"\n[bold blue]Message from {chat_id}:[/bold blue] {text}")
+            try:
+                result = await agent.run(text, stream=False)
+                console.print(f"[bold green]Response:[/bold green] {result[:500]}{'...' if len(result) > 500 else ''}")
+                return result
+            except Exception as e:
+                console.print(f"[red]Error:[/red] {e}")
+                return f"Error: {e}"
+
+        service.set_message_handler(message_handler)
+
+        try:
+            asyncio.run(service.start())
+        except KeyboardInterrupt:
+            console.print("\n[dim]Telegram service stopped.[/dim]")
+
+
+def cmd_telegram_stop(args: argparse.Namespace) -> None:
+    """Stop the Telegram service daemon."""
+    pid = _get_telegram_pid()
+
+    if not pid:
+        console.print("[yellow]Telegram service is not running[/yellow]")
+        return
+
+    try:
+        os.kill(pid, signal.SIGTERM)
+        console.print(f"[green]Sent stop signal to Telegram service[/green] (PID {pid})")
+
+        import time
+        for _ in range(10):
+            time.sleep(0.2)
+            if not _get_telegram_pid():
+                console.print("[green]Telegram service stopped[/green]")
+                return
+
+        console.print("[yellow]Service may still be shutting down...[/yellow]")
+    except ProcessLookupError:
+        console.print("[yellow]Telegram service process not found[/yellow]")
+        TELEGRAM_PID_FILE.unlink(missing_ok=True)
+    except PermissionError:
+        console.print(f"[red]Permission denied[/red] to stop PID {pid}")
+
+
+def cmd_telegram_status(args: argparse.Namespace) -> None:
+    """Check the status of the Telegram service."""
+    pid = _get_telegram_pid()
+
+    if pid:
+        console.print(f"[green]Telegram service is running[/green] (PID {pid})")
+        console.print(f"  Log file: {TELEGRAM_LOG_FILE}")
+
+        if TELEGRAM_LOG_FILE.exists():
+            console.print(f"\n[dim]Recent log entries:[/dim]")
+            lines = TELEGRAM_LOG_FILE.read_text().strip().split("\n")
+            for line in lines[-10:]:
+                console.print(f"  {line}")
+    else:
+        console.print("[yellow]Telegram service is not running[/yellow]")
+
+    # Show configuration status
+    console.print(f"\n[bold]Configuration:[/bold]")
+    if settings.telegram_bot_token:
+        masked = settings.telegram_bot_token[:8] + "..." + settings.telegram_bot_token[-4:]
+        console.print(f"  Token: {masked}")
+    else:
+        console.print(f"  Token: [red]Not set[/red]")
+
+    if settings.telegram_chat_id:
+        console.print(f"  Chat ID: {settings.telegram_chat_id}")
+    else:
+        console.print(f"  Chat ID: [yellow]Not set[/yellow]")
+
+
+def cmd_telegram_send(args: argparse.Namespace) -> None:
+    """Send a test message via Telegram."""
+    from macbot.telegram import TelegramBot
+
+    if not settings.telegram_bot_token:
+        console.print("[red]Error:[/red] MACBOT_TELEGRAM_BOT_TOKEN not set")
+        sys.exit(1)
+
+    chat_id = args.chat_id or settings.telegram_chat_id
+    if not chat_id:
+        console.print("[red]Error:[/red] No chat ID provided")
+        console.print("  Use --chat-id or set MACBOT_TELEGRAM_CHAT_ID")
+        sys.exit(1)
+
+    async def _send() -> None:
+        bot = TelegramBot(settings.telegram_bot_token)
+        try:
+            await bot.send_message(chat_id, args.message)
+            console.print(f"[green]Message sent to {chat_id}[/green]")
+        except Exception as e:
+            console.print(f"[red]Failed to send:[/red] {e}")
+            sys.exit(1)
+        finally:
+            await bot.close()
+
+    asyncio.run(_send())
+
+
+def cmd_telegram_whoami(args: argparse.Namespace) -> None:
+    """Help the user get their chat ID."""
+    from macbot.telegram import TelegramBot
+
+    if not settings.telegram_bot_token:
+        console.print("[red]Error:[/red] MACBOT_TELEGRAM_BOT_TOKEN not set")
+        sys.exit(1)
+
+    console.print("[bold]Getting your chat ID...[/bold]\n")
+    console.print("1. Open Telegram and send any message to your bot")
+    console.print("2. Your chat ID will appear below\n")
+    console.print("[dim]Press Ctrl+C to stop[/dim]\n")
+
+    async def _whoami() -> None:
+        bot = TelegramBot(settings.telegram_bot_token)
+        info = await bot.get_me()
+        console.print(f"Bot: @{info['username']}")
+        console.print("Waiting for messages...\n")
+
+        seen_chats: set[int] = set()
+        offset = None
+
+        try:
+            while True:
+                updates = await bot.get_updates(offset=offset, timeout=30)
+                for update in updates:
+                    offset = update.update_id + 1
+                    if update.message:
+                        chat_id = update.message.chat_id
+                        if chat_id not in seen_chats:
+                            seen_chats.add(chat_id)
+                            user = update.message.from_user
+                            user_info = f"@{user.username}" if user and user.username else str(user.id) if user else "Unknown"
+                            console.print(f"[green]Found![/green] Chat ID: [bold]{chat_id}[/bold] (from {user_info})")
+                            console.print(f"\nSet it with:")
+                            console.print(f"  export MACBOT_TELEGRAM_CHAT_ID='{chat_id}'")
+        except asyncio.CancelledError:
+            pass
+        finally:
+            await bot.close()
+
+    try:
+        asyncio.run(_whoami())
+    except KeyboardInterrupt:
+        console.print("\n[dim]Stopped.[/dim]")
+
+
 def main() -> NoReturn:
     """Main entry point for MacBot CLI."""
+    # Check for --help-all before argparse processes it
+    show_all_commands = "--help-all" in sys.argv
+
+    # Handle custom help output for clean display
+    if "-h" in sys.argv or "--help" in sys.argv or (show_all_commands and len(sys.argv) == 2):
+        if show_all_commands:
+            console.print(f"""[bold]macbot[/bold] v{__version__} - LLM-powered agent for macOS automation
+
+[bold]MAIN COMMANDS[/bold]
+  run          Run a goal or ask a question
+  start        Start the macbot service (cron + telegram)
+  stop         Stop the macbot service
+  status       Check service status
+  doctor       Check system prerequisites
+
+[bold]ADMIN COMMANDS[/bold]
+  chat         Interactive chat with the agent
+  task         Execute a task directly (no LLM)
+  tasks        List available tasks
+  cron         Manage scheduled jobs
+  memory       Manage agent memory
+  telegram     Telegram bot commands
+  version      Show version information
+
+[bold]OPTIONS[/bold]
+  -v, --verbose    Show detailed output
+  --help-all       Show all commands
+
+[bold]EXAMPLES[/bold]
+  macbot run "Check my emails"        Run a goal
+  macbot start -d                     Start service as daemon
+  macbot cron import jobs.yaml        Import scheduled jobs
+  macbot telegram whoami              Get your Telegram chat ID
+""")
+        else:
+            console.print(f"""[bold]macbot[/bold] v{__version__} - LLM-powered agent for macOS automation
+
+[bold]COMMANDS[/bold]
+  run          Run a goal or ask a question
+  start        Start the macbot service (cron + telegram)
+  stop         Stop the macbot service
+  status       Check service status
+  doctor       Check system prerequisites
+
+[bold]OPTIONS[/bold]
+  -v, --verbose    Show detailed output
+  --help-all       Show all commands including admin tools
+
+[bold]EXAMPLES[/bold]
+  macbot run "Check my emails"        Run a goal
+  macbot start -d                     Start service as daemon
+  macbot status                       Check service status
+  macbot doctor                       Verify setup
+
+Use [bold]macbot --help-all[/bold] to see all commands.
+Use [bold]macbot <command> --help[/bold] for command details.
+""")
+        sys.exit(0)
+
     parser = argparse.ArgumentParser(
         prog="macbot",
         description="MacBot - LLM-powered agent for macOS automation",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""
-CONCEPTS:
-  Task    A single executable action (tool). No LLM involved.
-          Example: get_unread_emails, create_reminder, get_today_events
-          Usage: macbot task <name> [key=value ...]
-
-  Goal    Natural language objective. LLM reasons about which tasks to call.
-          Example: "Check my emails and summarize urgent ones"
-          Usage: macbot run "<goal>"
-
-  Chat    Interactive conversation. Context preserved between messages.
-          Usage: macbot chat
-
-  Job     A goal that runs automatically on a schedule.
-          Job = Goal + Schedule (interval, cron, or one-time)
-          Define jobs in a YAML file, import with 'macbot cron import'
-
-EXAMPLES:
-  macbot chat                              Interactive chat
-  macbot run "Check my emails" -c          Run goal, then continue chatting
-  macbot run "What meetings today?"        Run goal and exit
-  macbot task get_today_events             Execute task directly
-  macbot cron import jobs.yaml             Import jobs from config file
-  macbot cron start -b                     Start scheduler in background
-  macbot cron list                         List registered jobs
-  macbot cron stop                         Stop background scheduler
-"""
+        add_help=False,  # We handle help ourselves
     )
-    parser.add_argument(
-        "-v", "--verbose", action="store_true",
-        help="Show detailed output including tool calls"
-    )
+    parser.add_argument("-h", "--help", action="store_true", help="Show help")
+    parser.add_argument("-v", "--verbose", action="store_true", help="Show detailed output")
+    parser.add_argument("--help-all", action="store_true", help="Show all commands")
 
-    subparsers = parser.add_subparsers(dest="command", metavar="COMMAND")
+    subparsers = parser.add_subparsers(dest="command")
 
-    # Chat command (interactive mode)
-    chat_parser = subparsers.add_parser(
-        "chat",
-        help="Start interactive chat with the agent",
-        description="Start an interactive conversation with the agent. "
-                    "Context is preserved between messages."
-    )
-    chat_parser.add_argument(
-        "-v", "--verbose", action="store_true",
-        help="Show detailed output including tool calls"
-    )
-    chat_parser.set_defaults(func=cmd_chat)
+    # ==========================================================================
+    # MAIN COMMANDS (shown in default help)
+    # ==========================================================================
 
     # Run command (single goal)
     run_parser = subparsers.add_parser(
         "run",
-        help="Run a goal (with optional continue to chat)",
+        help="Run a goal or ask a question",
         description="Give the agent a goal to achieve. The agent will reason "
-                    "about it and call tasks as needed. You can also use job names "
-                    "from ~/.macbot/jobs.yaml.",
+                    "about it and call tasks as needed.",
         epilog="""Examples:
   macbot run "Check my emails"              Run a goal
-  macbot run "Morning Briefing"             Run job by name (from jobs.yaml)
+  macbot run "What's on my calendar?"       Ask a question
   macbot run --list-jobs                    Show available jobs"""
     )
     run_parser.add_argument(
@@ -1487,10 +1877,69 @@ EXAMPLES:
     )
     run_parser.set_defaults(func=cmd_run)
 
+    # Start command (unified service)
+    start_parser = subparsers.add_parser(
+        "start",
+        help="Start the macbot service (cron + telegram)",
+        description="Start the unified macbot service that runs scheduled jobs "
+                    "and listens for Telegram messages."
+    )
+    start_parser.add_argument(
+        "-d", "--daemon", action="store_true",
+        help="Run in background as a daemon"
+    )
+    start_parser.add_argument(
+        "-v", "--verbose", action="store_true",
+        help="Show detailed output"
+    )
+    start_parser.set_defaults(func=cmd_start)
+
+    # Stop command
+    stop_parser = subparsers.add_parser(
+        "stop",
+        help="Stop the macbot service",
+        description="Stop the running macbot service daemon."
+    )
+    stop_parser.set_defaults(func=cmd_stop)
+
+    # Status command
+    status_parser = subparsers.add_parser(
+        "status",
+        help="Check service status",
+        description="Show the status of the macbot service, cron jobs, and Telegram."
+    )
+    status_parser.set_defaults(func=cmd_status)
+
+    # Doctor command
+    doctor_parser = subparsers.add_parser(
+        "doctor",
+        help="Check system prerequisites and configuration",
+        description="Verify that MacBot is properly configured and all "
+                    "prerequisites are met."
+    )
+    doctor_parser.set_defaults(func=cmd_doctor)
+
+    # ==========================================================================
+    # ADMIN COMMANDS (hidden from default help, shown with --help-all)
+    # ==========================================================================
+
+    # Chat command (interactive mode)
+    chat_parser = subparsers.add_parser(
+        "chat",
+        help=argparse.SUPPRESS,  # Admin command
+        description="Start an interactive conversation with the agent. "
+                    "Context is preserved between messages."
+    )
+    chat_parser.add_argument(
+        "-v", "--verbose", action="store_true",
+        help="Show detailed output including tool calls"
+    )
+    chat_parser.set_defaults(func=cmd_chat)
+
     # Task command (direct execution)
     task_parser = subparsers.add_parser(
         "task",
-        help="Execute a task directly (no LLM)",
+        help=argparse.SUPPRESS,  # Admin command
         description="Execute a specific task directly without LLM involvement. "
                     "Useful for testing or scripting.",
         epilog="Example: macbot task get_unread_emails count_only=true"
@@ -1512,7 +1961,7 @@ EXAMPLES:
     # Tasks command (list tasks)
     tasks_parser = subparsers.add_parser(
         "tasks",
-        help="List available tasks",
+        help=argparse.SUPPRESS,  # Admin command
         description="Show all tasks (tools) the agent can use."
     )
     tasks_parser.set_defaults(func=cmd_tasks)
@@ -1520,14 +1969,14 @@ EXAMPLES:
     # Also allow 'list' as alias for 'tasks'
     list_parser = subparsers.add_parser(
         "list",
-        help="List available tasks (alias for 'tasks')"
+        help=argparse.SUPPRESS  # Always hidden (it's just an alias)
     )
     list_parser.set_defaults(func=cmd_tasks)
 
-    # Schedule command group
+    # Schedule command group (legacy, hidden)
     schedule_parser = subparsers.add_parser(
         "schedule",
-        help="Run scheduled jobs (foreground or background)",
+        help=argparse.SUPPRESS,  # Hidden - use 'start' instead
         description="Run a goal or task on a repeating schedule. "
                     "Can run in foreground or as a background daemon.",
         epilog="""Examples:
@@ -1590,23 +2039,14 @@ EXAMPLES:
     # Version command
     version_parser = subparsers.add_parser(
         "version",
-        help="Show version information"
+        help=argparse.SUPPRESS  # Admin command
     )
     version_parser.set_defaults(func=cmd_version)
-
-    # Doctor command
-    doctor_parser = subparsers.add_parser(
-        "doctor",
-        help="Check system prerequisites and configuration",
-        description="Verify that MacBot is properly configured and all "
-                    "prerequisites are met."
-    )
-    doctor_parser.set_defaults(func=cmd_doctor)
 
     # Cron command group
     cron_parser = subparsers.add_parser(
         "cron",
-        help="Manage scheduled jobs (persistent)",
+        help=argparse.SUPPRESS,  # Admin command
         description="Create and manage persistent scheduled jobs that can run "
                     "at specific times or intervals."
     )
@@ -1712,7 +2152,7 @@ EXAMPLES:
     # Memory command group
     memory_parser = subparsers.add_parser(
         "memory",
-        help="Manage agent memory (processed emails, created reminders)",
+        help=argparse.SUPPRESS,  # Admin command
         description="View and manage the agent's persistent memory that tracks "
                     "processed emails and created reminders."
     )
@@ -1771,6 +2211,77 @@ Example:
     )
     memory_clear.set_defaults(func=cmd_memory_clear)
 
+    # Telegram command group
+    telegram_parser = subparsers.add_parser(
+        "telegram",
+        help=argparse.SUPPRESS,  # Admin command
+        description="Receive tasks and send results via Telegram.",
+        epilog="""Setup:
+  1. Create a bot via @BotFather on Telegram
+  2. export MACBOT_TELEGRAM_BOT_TOKEN='your-token'
+  3. macbot telegram whoami  # Get your chat ID
+  4. export MACBOT_TELEGRAM_CHAT_ID='your-chat-id'
+  5. macbot telegram start
+
+Examples:
+  macbot telegram start        Start in foreground
+  macbot telegram start -d     Start as daemon
+  macbot telegram status       Check service status
+  macbot telegram stop         Stop the daemon
+  macbot telegram send "Hi"    Send a test message"""
+    )
+    telegram_subparsers = telegram_parser.add_subparsers(dest="telegram_command", metavar="SUBCOMMAND")
+
+    # telegram start
+    telegram_start = telegram_subparsers.add_parser(
+        "start",
+        help="Start the Telegram service",
+        description="Start listening for Telegram messages and respond with agent results."
+    )
+    telegram_start.add_argument(
+        "-d", "--daemon", action="store_true",
+        help="Run in background as a daemon"
+    )
+    telegram_start.set_defaults(func=cmd_telegram_start)
+
+    # telegram stop
+    telegram_stop = telegram_subparsers.add_parser(
+        "stop",
+        help="Stop the Telegram service daemon"
+    )
+    telegram_stop.set_defaults(func=cmd_telegram_stop)
+
+    # telegram status
+    telegram_status = telegram_subparsers.add_parser(
+        "status",
+        help="Check Telegram service status"
+    )
+    telegram_status.set_defaults(func=cmd_telegram_status)
+
+    # telegram send
+    telegram_send = telegram_subparsers.add_parser(
+        "send",
+        help="Send a test message",
+        description="Send a message to verify Telegram is working."
+    )
+    telegram_send.add_argument(
+        "message",
+        help="Message to send"
+    )
+    telegram_send.add_argument(
+        "--chat-id",
+        help="Target chat ID (uses default if not specified)"
+    )
+    telegram_send.set_defaults(func=cmd_telegram_send)
+
+    # telegram whoami
+    telegram_whoami = telegram_subparsers.add_parser(
+        "whoami",
+        help="Get your chat ID",
+        description="Helps you find your Telegram chat ID by listening for messages."
+    )
+    telegram_whoami.set_defaults(func=cmd_telegram_whoami)
+
     args = parser.parse_args()
     setup_logging(args.verbose)
 
@@ -1801,6 +2312,11 @@ Example:
     # Handle memory subcommands
     if args.command == "memory" and args.memory_command is None:
         memory_parser.print_help()
+        sys.exit(0)
+
+    # Handle telegram subcommands
+    if args.command == "telegram" and args.telegram_command is None:
+        telegram_parser.print_help()
         sys.exit(0)
 
     args.func(args)

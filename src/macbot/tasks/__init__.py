@@ -112,4 +112,8 @@ def create_default_registry() -> TaskRegistry:
     from macbot.tasks.memory import register_memory_tasks
     register_memory_tasks(registry)
 
+    # Register Telegram tasks
+    from macbot.tasks.telegram import register_telegram_tasks
+    register_telegram_tasks(registry)
+
     return registry

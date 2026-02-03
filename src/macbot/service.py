@@ -1,0 +1,377 @@
+"""Unified macbot service.
+
+Runs the cron scheduler and Telegram listener together as a single service.
+"""
+
+import asyncio
+import logging
+import os
+import signal
+from datetime import datetime
+from pathlib import Path
+
+from macbot.config import settings
+from macbot.core.agent import Agent
+from macbot.cron import CronPayload, CronService
+from macbot.tasks import create_default_registry
+
+logger = logging.getLogger(__name__)
+
+# Service paths
+MACBOT_DIR = Path.home() / ".macbot"
+PID_FILE = MACBOT_DIR / "service.pid"
+LOG_FILE = MACBOT_DIR / "service.log"
+
+
+def get_service_pid() -> int | None:
+    """Get the PID of a running macbot service, or None if not running."""
+    if not PID_FILE.exists():
+        return None
+    try:
+        pid = int(PID_FILE.read_text().strip())
+        os.kill(pid, 0)
+        return pid
+    except (ValueError, ProcessLookupError, PermissionError):
+        PID_FILE.unlink(missing_ok=True)
+        return None
+
+
+def stop_service() -> bool:
+    """Stop the running macbot service.
+
+    Returns:
+        True if service was stopped, False if not running
+    """
+    pid = get_service_pid()
+    if not pid:
+        return False
+
+    try:
+        os.kill(pid, signal.SIGTERM)
+        # Wait for process to exit
+        import time
+        for _ in range(20):
+            time.sleep(0.2)
+            try:
+                os.kill(pid, 0)
+            except ProcessLookupError:
+                PID_FILE.unlink(missing_ok=True)
+                return True
+        return True
+    except ProcessLookupError:
+        PID_FILE.unlink(missing_ok=True)
+        return False
+
+
+class MacbotService:
+    """Unified service that runs cron jobs and listens for Telegram messages."""
+
+    def __init__(self):
+        """Initialize the service."""
+        self.registry = create_default_registry()
+        self.agent = Agent(self.registry)
+        self.cron_service: CronService | None = None
+        self.telegram_service = None
+        self._running = False
+        self._tasks: list[asyncio.Task] = []
+
+    def _setup_cron(self) -> bool:
+        """Set up the cron service.
+
+        Returns:
+            True if cron has enabled jobs, False otherwise
+        """
+        self.cron_service = CronService(storage_path=settings.get_cron_storage_path())
+        jobs = self.cron_service.list_jobs()
+        enabled_jobs = [j for j in jobs if j.enabled]
+
+        if not enabled_jobs:
+            return False
+
+        async def agent_handler(payload: CronPayload):
+            from macbot.cron.executor import ExecutionResult
+            try:
+                logger.info(f"Cron: Running '{payload.message[:50]}...'")
+                result = await self.agent.run(payload.message, stream=False)
+                logger.info(f"Cron: Completed, result length: {len(result)}")
+                return ExecutionResult(success=True, output=result)
+            except Exception as e:
+                logger.error(f"Cron: Error - {e}")
+                return ExecutionResult(success=False, error=str(e))
+
+        self.cron_service.set_agent_handler(agent_handler)
+        return True
+
+    def _setup_telegram(self) -> bool:
+        """Set up the Telegram service.
+
+        Returns:
+            True if Telegram is configured, False otherwise
+        """
+        if not settings.telegram_bot_token:
+            return False
+
+        from macbot.telegram import TelegramService
+
+        self.telegram_service = TelegramService(
+            bot_token=settings.telegram_bot_token,
+            chat_id=settings.telegram_chat_id or None,
+            allowed_users=settings.telegram_allowed_users or None,
+        )
+
+        async def message_handler(text: str, chat_id: str) -> str:
+            logger.info(f"Telegram: Message from {chat_id}: {text[:50]}...")
+            try:
+                result = await self.agent.run(text, stream=False)
+                logger.info(f"Telegram: Response sent, length: {len(result)}")
+                return result
+            except Exception as e:
+                logger.error(f"Telegram: Error - {e}")
+                return f"Error: {e}"
+
+        self.telegram_service.set_message_handler(message_handler)
+        return True
+
+    async def _run_cron(self) -> None:
+        """Run the cron service loop."""
+        if not self.cron_service:
+            return
+        await self.cron_service.start()
+        while self._running:
+            await asyncio.sleep(1)
+
+    async def _run_telegram(self) -> None:
+        """Run the Telegram service loop."""
+        if not self.telegram_service:
+            return
+        await self.telegram_service.start()
+
+    async def start(self) -> None:
+        """Start all configured services."""
+        self._running = True
+
+        has_cron = self._setup_cron()
+        has_telegram = self._setup_telegram()
+
+        if has_cron:
+            jobs = [j for j in self.cron_service.list_jobs() if j.enabled]
+            logger.info(f"Starting cron service with {len(jobs)} enabled jobs")
+            self._tasks.append(asyncio.create_task(self._run_cron()))
+
+        if has_telegram:
+            from macbot.telegram.bot import validate_token
+            ok, msg = await validate_token(settings.telegram_bot_token)
+            if ok:
+                logger.info(f"Starting Telegram service as {msg}")
+                self._tasks.append(asyncio.create_task(self._run_telegram()))
+            else:
+                logger.error(f"Telegram token invalid: {msg}")
+
+        if not self._tasks:
+            logger.warning("No services configured (no cron jobs, no Telegram)")
+            return
+
+        # Wait for all tasks
+        try:
+            await asyncio.gather(*self._tasks)
+        except asyncio.CancelledError:
+            pass
+
+    async def stop(self) -> None:
+        """Stop all services gracefully."""
+        self._running = False
+
+        if self.telegram_service:
+            await self.telegram_service.stop()
+
+        if self.cron_service:
+            await self.cron_service.stop()
+
+        for task in self._tasks:
+            task.cancel()
+
+        if self._tasks:
+            await asyncio.gather(*self._tasks, return_exceptions=True)
+
+    def get_status(self) -> dict:
+        """Get status of all services.
+
+        Returns:
+            Dictionary with service status information
+        """
+        status = {
+            "running": self._running,
+            "cron": {
+                "enabled": False,
+                "jobs_total": 0,
+                "jobs_enabled": 0,
+            },
+            "telegram": {
+                "enabled": False,
+                "connected": False,
+                "bot_username": None,
+            },
+        }
+
+        # Cron status
+        cron_service = CronService(storage_path=settings.get_cron_storage_path())
+        jobs = cron_service.list_jobs()
+        enabled_jobs = [j for j in jobs if j.enabled]
+        status["cron"]["jobs_total"] = len(jobs)
+        status["cron"]["jobs_enabled"] = len(enabled_jobs)
+        status["cron"]["enabled"] = len(enabled_jobs) > 0
+
+        # Telegram status
+        if settings.telegram_bot_token:
+            status["telegram"]["enabled"] = True
+            status["telegram"]["chat_id"] = settings.telegram_chat_id or None
+
+        return status
+
+
+def run_service(daemon: bool = False, verbose: bool = False) -> None:
+    """Run the macbot service.
+
+    Args:
+        daemon: Whether to run as a background daemon
+        verbose: Whether to show verbose output
+    """
+    from rich.console import Console
+    console = Console()
+
+    # Check what's available
+    service = MacbotService()
+    status = service.get_status()
+
+    has_cron = status["cron"]["enabled"]
+    has_telegram = status["telegram"]["enabled"]
+
+    if not has_cron and not has_telegram:
+        console.print("[yellow]Nothing to run:[/yellow]")
+        console.print("  - No cron jobs configured (use 'macbot cron import <file>')")
+        console.print("  - No Telegram configured (set MACBOT_TELEGRAM_BOT_TOKEN)")
+        return
+
+    # Show what will run
+    console.print("[bold]Starting macbot service[/bold]\n")
+
+    if has_cron:
+        console.print(f"  [green]✓[/green] Cron: {status['cron']['jobs_enabled']} enabled jobs")
+    else:
+        console.print(f"  [dim]○[/dim] Cron: No jobs configured")
+
+    if has_telegram:
+        chat_info = f" (chat: {status['telegram']['chat_id']})" if status['telegram']['chat_id'] else ""
+        console.print(f"  [green]✓[/green] Telegram: Configured{chat_info}")
+    else:
+        console.print(f"  [dim]○[/dim] Telegram: Not configured")
+
+    console.print()
+
+    if daemon:
+        # Check if already running
+        existing_pid = get_service_pid()
+        if existing_pid:
+            console.print(f"[yellow]Service already running[/yellow] (PID {existing_pid})")
+            console.print("Stop it first with: macbot stop")
+            return
+
+        console.print(f"[green]Starting in background...[/green]")
+        console.print(f"  Log: {LOG_FILE}")
+        console.print(f"\nUse 'macbot stop' to stop")
+
+        # Daemonize
+        _daemonize()
+
+        # Now in daemon process
+        _run_daemon_service()
+    else:
+        # Foreground mode
+        console.print("[dim]Press Ctrl+C to stop[/dim]\n")
+
+        # Set up logging for foreground
+        if verbose:
+            logging.basicConfig(
+                level=logging.INFO,
+                format="%(asctime)s [%(name)s] %(message)s",
+                datefmt="%H:%M:%S",
+            )
+
+        try:
+            asyncio.run(service.start())
+        except KeyboardInterrupt:
+            console.print("\n[dim]Stopping...[/dim]")
+            asyncio.run(service.stop())
+            console.print("[dim]Service stopped.[/dim]")
+
+
+def _daemonize() -> None:
+    """Fork the process to run in the background."""
+    import sys
+
+    # First fork
+    pid = os.fork()
+    if pid > 0:
+        sys.exit(0)
+
+    os.chdir("/")
+    os.setsid()
+    os.umask(0)
+
+    # Second fork
+    pid = os.fork()
+    if pid > 0:
+        sys.exit(0)
+
+    # Redirect file descriptors
+    sys.stdout.flush()
+    sys.stderr.flush()
+
+    MACBOT_DIR.mkdir(parents=True, exist_ok=True)
+    log_fd = os.open(str(LOG_FILE), os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o644)
+    null_fd = os.open(os.devnull, os.O_RDONLY)
+
+    os.dup2(null_fd, sys.stdin.fileno())
+    os.dup2(log_fd, sys.stdout.fileno())
+    os.dup2(log_fd, sys.stderr.fileno())
+
+    os.close(null_fd)
+    os.close(log_fd)
+
+    # Write PID file
+    PID_FILE.write_text(str(os.getpid()))
+
+
+def _run_daemon_service() -> None:
+    """Run the service in daemon mode."""
+    import sys
+
+    print(f"\n{'='*60}")
+    print(f"MacBot Service started at {datetime.now().isoformat()}")
+    print(f"PID: {os.getpid()}")
+    print(f"{'='*60}\n")
+
+    # Set up logging
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s [%(name)s] %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+    )
+
+    # Set up signal handler
+    def handle_signal(signum, frame):
+        print(f"\nReceived signal {signum}, shutting down...")
+        PID_FILE.unlink(missing_ok=True)
+        sys.exit(0)
+
+    signal.signal(signal.SIGTERM, handle_signal)
+    signal.signal(signal.SIGINT, handle_signal)
+
+    service = MacbotService()
+
+    try:
+        asyncio.run(service.start())
+    except Exception as e:
+        print(f"Service error: {e}")
+    finally:
+        PID_FILE.unlink(missing_ok=True)
