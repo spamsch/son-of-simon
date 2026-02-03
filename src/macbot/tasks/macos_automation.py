@@ -188,7 +188,7 @@ class SearchEmailsTask(Task):
             args.append("--all-mailboxes")
         args.extend(["--limit", str(limit)])
 
-        return await run_script("mail/search-emails.sh", args)
+        return await run_script("mail/search-emails.sh", args, timeout=60)
 
 
 class SendEmailTask(Task):
@@ -297,7 +297,7 @@ class MoveEmailTask(Task):
             args.extend(["--mailbox", mailbox])
         args.extend(["--limit", str(limit)])
 
-        return await run_script("mail/move-email.sh", args)
+        return await run_script("mail/move-email.sh", args, timeout=60)
 
 
 class DownloadAttachmentsTask(Task):
@@ -354,7 +354,7 @@ class DownloadAttachmentsTask(Task):
             args.extend(["--mailbox", mailbox])
         args.extend(["--limit", str(limit)])
 
-        return await run_script("mail/download-attachments.sh", args)
+        return await run_script("mail/download-attachments.sh", args, timeout=60)
 
 
 class MarkEmailsReadTask(Task):

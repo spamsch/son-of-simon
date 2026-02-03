@@ -205,30 +205,36 @@ tell application "Mail"
     -- Search each mailbox
     repeat with mb in mailboxesToSearch
         try
-            set mbMsgs to messages of mb
+            -- Use 'whose' clause for date filtering when possible (much faster)
+            if cutoffDate is not missing value then
+                set mbMsgs to (messages of mb whose date received >= cutoffDate)
+            else
+                set mbMsgs to messages of mb
+            end if
 
             repeat with msg in mbMsgs
                 set includeMsg to true
 
                 -- Check sender filter
                 if "$SENDER_ESCAPED" is not "" then
-                    if sender of msg does not contain "$SENDER_ESCAPED" then
+                    try
+                        if sender of msg does not contain "$SENDER_ESCAPED" then
+                            set includeMsg to false
+                        end if
+                    on error
                         set includeMsg to false
-                    end if
+                    end try
                 end if
 
                 -- Check subject filter
                 if includeMsg and "$SUBJECT_ESCAPED" is not "" then
-                    if subject of msg does not contain "$SUBJECT_ESCAPED" then
+                    try
+                        if subject of msg does not contain "$SUBJECT_ESCAPED" then
+                            set includeMsg to false
+                        end if
+                    on error
                         set includeMsg to false
-                    end if
-                end if
-
-                -- Check date filter
-                if includeMsg and cutoffDate is not missing value then
-                    if date received of msg < cutoffDate then
-                        set includeMsg to false
-                    end if
+                    end try
                 end if
 
                 if includeMsg then
