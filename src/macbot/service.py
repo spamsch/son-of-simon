@@ -69,11 +69,27 @@ class MacbotService:
     def __init__(self):
         """Initialize the service."""
         self.registry = create_default_registry()
-        self.agent = Agent(self.registry)
+        self.agent = Agent(self.registry)  # Default agent for cron jobs
+        self._chat_agents: dict[str, Agent] = {}  # Per-chat agents for Telegram conversations
         self.cron_service: CronService | None = None
         self.telegram_service = None
         self._running = False
         self._tasks: list[asyncio.Task] = []
+
+    def _get_chat_agent(self, chat_id: str) -> Agent:
+        """Get or create an agent for a specific chat.
+
+        Each chat gets its own agent instance to maintain conversation history.
+
+        Args:
+            chat_id: The Telegram chat ID
+
+        Returns:
+            Agent instance for this chat
+        """
+        if chat_id not in self._chat_agents:
+            self._chat_agents[chat_id] = Agent(self.registry)
+        return self._chat_agents[chat_id]
 
     def _setup_cron(self) -> bool:
         """Set up the cron service.
@@ -128,8 +144,17 @@ class MacbotService:
             # Show incoming message in console
             print(f"\n[{timestamp}] 📩 Telegram: {text[:100]}{'...' if len(text) > 100 else ''}")
             logger.info(f"Telegram: Message from {chat_id}: {text[:50]}...")
+
+            # Handle special commands
+            if text.strip().lower() in ("/reset", "/clear", "/new"):
+                if chat_id in self._chat_agents:
+                    self._chat_agents[chat_id].reset()
+                return "Conversation cleared. Starting fresh!"
+
             try:
-                result = await self.agent.run(text, stream=False)
+                # Get per-chat agent and continue conversation
+                agent = self._get_chat_agent(chat_id)
+                result = await agent.run(text, stream=False, continue_conversation=True)
                 logger.info(f"Telegram: Response sent, length: {len(result)}")
                 return result
             except Exception as e:

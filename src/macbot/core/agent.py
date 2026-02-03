@@ -69,18 +69,31 @@ class Agent:
                 model=provider_config["model"],
             )
 
-    async def run(self, goal: str, verbose: bool = False, stream: bool = True) -> str:
+    async def run(
+        self,
+        goal: str,
+        verbose: bool = False,
+        stream: bool = True,
+        continue_conversation: bool = False,
+    ) -> str:
         """Run the agent loop to achieve a goal.
 
         Args:
             goal: The objective for the agent to achieve
             verbose: Whether to print detailed output
             stream: Whether to stream LLM responses
+            continue_conversation: If True, append to existing messages instead of resetting.
+                                   Useful for multi-turn conversations (e.g., Telegram chat).
 
         Returns:
             The final response from the agent
         """
-        self.messages = [Message(role="user", content=goal)]
+        if continue_conversation and self.messages:
+            # Continue existing conversation - just add the new user message
+            self.messages.append(Message(role="user", content=goal))
+        else:
+            # Start fresh conversation
+            self.messages = [Message(role="user", content=goal)]
         self.iteration = 0
 
         if verbose:
