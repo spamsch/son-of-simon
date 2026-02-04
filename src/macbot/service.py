@@ -206,6 +206,12 @@ class MacbotService:
             return
         await self.telegram_service.start()
 
+    def _format_tokens(self, count: int) -> str:
+        """Format token count with K suffix for thousands."""
+        if count >= 1000:
+            return f"{count / 1000:.1f}K"
+        return str(count)
+
     async def _run_interactive(self) -> None:
         """Run interactive console input loop."""
         from concurrent.futures import ThreadPoolExecutor
@@ -216,37 +222,72 @@ class MacbotService:
         loop = asyncio.get_event_loop()
         console = Console()
 
-        console.print("\n[dim][Ready for input - type a query or 'quit' to exit][/dim]\n")
+        console.print("\n[dim][Ready for input - type a query or 'quit' to exit][/dim]")
+        console.print("[dim][Commands: 'clear' resets conversation, 'stats' shows token usage][/dim]\n")
 
         while self._running:
             try:
+                # Build prompt with token stats
+                stats = self.agent.get_token_stats()
+                ctx = self._format_tokens(stats["context_tokens"])
+                total = self._format_tokens(stats["session_total_tokens"])
+
+                if stats["session_total_tokens"] > 0:
+                    prompt = f"[dim](ctx:{ctx} total:{total})[/dim] [bold blue]→[/bold blue] "
+                else:
+                    prompt = "[bold blue]→[/bold blue] "
+
                 # Read input in a thread to not block the event loop
                 user_input = await loop.run_in_executor(
-                    executor, lambda: console.input("[bold blue]→[/bold blue] ").strip()
+                    executor, lambda p=prompt: console.input(p).strip()
                 )
 
                 if not user_input:
                     continue
 
                 if user_input.lower() in ("quit", "exit", "q"):
+                    # Show final stats
+                    stats = self.agent.get_token_stats()
+                    if stats["session_total_tokens"] > 0:
+                        console.print(f"\n[dim]Session total: {stats['session_total_tokens']:,} tokens "
+                                      f"(in: {stats['session_input_tokens']:,}, out: {stats['session_output_tokens']:,})[/dim]")
                     console.print("[dim][Stopping service...][/dim]")
                     await self.stop()
                     break
 
                 if user_input.lower() == "clear":
                     self.agent.reset()
-                    console.print("[dim][Conversation cleared][/dim]")
+                    console.print("[dim][Conversation cleared - token session continues][/dim]")
                     continue
 
-                # Process query through main agent
+                if user_input.lower() == "stats":
+                    stats = self.agent.get_token_stats()
+                    console.print(f"\n[bold]Token Statistics[/bold]")
+                    console.print(f"  Context size:    {stats['context_tokens']:,} tokens")
+                    console.print(f"  Messages:        {stats['message_count']}")
+                    console.print(f"  Session input:   {stats['session_input_tokens']:,} tokens")
+                    console.print(f"  Session output:  {stats['session_output_tokens']:,} tokens")
+                    console.print(f"  Session total:   {stats['session_total_tokens']:,} tokens\n")
+                    continue
+
+                # Process query through main agent (cancellable with Escape)
                 timestamp = datetime.now().strftime("%H:%M:%S")
-                console.print(f"[dim][{timestamp}] Processing...[/dim]\n")
+                console.print(f"[dim][{timestamp}] Processing... (Escape to cancel)[/dim]\n")
 
                 try:
-                    result = await self.agent.run(user_input, stream=True, continue_conversation=True)
-                    console.print()
-                    console.print(Markdown(result))
-                    console.print()
+                    from macbot.utils.cancellable import run_with_escape_cancel
+
+                    result, cancelled = await run_with_escape_cancel(
+                        self.agent.run(user_input, stream=False, continue_conversation=True)
+                    )
+
+                    if cancelled:
+                        console.print("\n[dim][Cancelled by Escape][/dim]\n")
+                    else:
+                        console.print()
+                        console.print("[bold green]A:[/bold green]", end=" ")
+                        console.print(Markdown(result))
+                        console.print("[dim]─" * 60 + "[/dim]\n")
                 except Exception as e:
                     console.print(f"\n[red]Error: {e}[/red]\n")
 

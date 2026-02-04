@@ -3,6 +3,8 @@
 Read content from a file on the filesystem.
 """
 
+import os
+
 from macbot.tasks.base import Task
 from macbot.tasks.registry import task_registry
 
@@ -42,6 +44,7 @@ class ReadFileTask(Task):
             FileNotFoundError: If the file does not exist.
             PermissionError: If the file cannot be read.
         """
+        path = os.path.expanduser(path)
         with open(path) as f:
             content = f.read(max_chars)
         return content

@@ -120,4 +120,12 @@ def create_default_registry() -> TaskRegistry:
     from macbot.tasks.paperless import register_paperless_tasks
     register_paperless_tasks(registry)
 
+    # Register web tasks (simple fetch/search - use instead of browser for quick lookups)
+    from macbot.tasks.web import register_web_tasks
+    register_web_tasks(registry)
+
+    # Register time tracking tasks
+    from macbot.tasks.time_tracking import register_time_tracking_tasks
+    register_time_tracking_tasks(registry)
+
     return registry

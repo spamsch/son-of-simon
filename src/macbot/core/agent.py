@@ -52,6 +52,11 @@ class Agent:
         self.messages: list[Message] = []
         self.iteration = 0
 
+        # Token tracking
+        self._session_input_tokens = 0
+        self._session_output_tokens = 0
+        self._last_context_tokens = 0  # Input tokens from last request (= context size)
+
     def _create_provider(self) -> LLMProvider:
         """Create an LLM provider based on configuration."""
         from macbot.config import LLMProviderType
@@ -64,6 +69,8 @@ class Agent:
                 model=provider_config["model"],
             )
         else:
+            # Note: OpenAI's native web_search requires Responses API (not yet supported)
+            # For web search, the agent can use the web_search task instead
             return OpenAIProvider(
                 api_key=provider_config["api_key"],
                 model=provider_config["model"],
@@ -131,7 +138,17 @@ class Agent:
                             tool_strs.append(f"{tc.name}({', '.join(params)})")
                         else:
                             tool_strs.append(tc.name)
-                    console.print(f"[dim][{self.iteration}/{self.config.max_iterations}] → {', '.join(tool_strs)}[/dim]")
+                    # Print tool calls - one per line if multiple, single line if one
+                    prefix = f"[dim][{self.iteration}/{self.config.max_iterations}] → "
+                    if len(tool_strs) == 1:
+                        console.print(f"{prefix}{tool_strs[0]}[/dim]", soft_wrap=True)
+                    else:
+                        console.print(f"{prefix}[/dim]", end="")
+                        for i, ts in enumerate(tool_strs):
+                            if i == 0:
+                                console.print(f"[dim]{ts}[/dim]", soft_wrap=True)
+                            else:
+                                console.print(f"[dim]          {ts}[/dim]", soft_wrap=True)
                 await self._execute_tool_calls(response, verbose)
             else:
                 # No tool calls means the agent has finished
@@ -206,12 +223,27 @@ You have access to the following tools to help accomplish tasks on this macOS sy
 - **"today's emails"** → use today_only=true parameter
 - **"recent emails"** → use days parameter (e.g., days=7 for last week)
 - **"all emails" or "read and unread"** → the search includes both by default
+- **"read this email" or "what does this email say"** → search_emails with message_id AND with_content=True to get full body text
 - **"archive this email"** → move_email with to="archive" and message_id from search
 - **"delete this email"** → move_email with to="trash" and message_id from search
 - **"download attachments"** → download_attachments with output folder and message_id
 - **"check my calendar"** → get_today_events or get_week_events
 - **"remind me to..."** → create_reminder
 - **"search notes for..."** → search_notes with the query
+- **"search the web for..." or "look up..."** → web_search (fast, no browser needed)
+- **"read this webpage" or "fetch this URL"** → web_fetch (extracts text from URL)
+
+## Web Lookups
+
+For simple web tasks, use the lightweight web_* tasks:
+- **web_search** - Quick DuckDuckGo search, returns titles/URLs/snippets
+- **web_fetch** - Fetch a URL and extract readable text content
+
+Only use browser_* tasks (browser_navigate, browser_snapshot, browser_click, etc.) when you need to:
+- Interact with JavaScript-heavy sites
+- Fill out forms or click buttons
+- Handle authentication or sessions
+- See visual layout of a page
 
 IMPORTANT: "from X account" usually means emails RECEIVED BY that account (any sender), not FROM that sender. Use the account parameter for this.
 
@@ -294,7 +326,7 @@ Use these when:
 
             def stream_callback(text: str) -> None:
                 if first_chunk[0]:
-                    console.print("\n[bold cyan]Assistant:[/bold cyan] ", end="")
+                    console.print("\n[bold green]A:[/bold green] ", end="")
                     first_chunk[0] = False
                 console.print(text, end="", highlight=False)
 
@@ -304,6 +336,14 @@ Use these when:
             system_prompt=system_prompt,
             stream_callback=stream_callback,
         )
+
+        # Track token usage
+        if response.usage:
+            input_tokens = response.usage.get("input_tokens", 0)
+            output_tokens = response.usage.get("output_tokens", 0)
+            self._session_input_tokens += input_tokens
+            self._session_output_tokens += output_tokens
+            self._last_context_tokens = input_tokens  # Context size = input tokens
 
         # Print newline after streaming completes
         if stream and response.content:
@@ -397,6 +437,32 @@ Use these when:
         return result
 
     def reset(self) -> None:
-        """Reset the agent state."""
+        """Reset the agent state (keeps session token counts)."""
         self.messages = []
         self.iteration = 0
+        self._last_context_tokens = 0
+
+    def reset_session(self) -> None:
+        """Fully reset the agent including session token counts."""
+        self.reset()
+        self._session_input_tokens = 0
+        self._session_output_tokens = 0
+
+    def get_token_stats(self) -> dict[str, int]:
+        """Get token usage statistics.
+
+        Returns:
+            Dictionary with token counts:
+            - context_tokens: Tokens in current context (from last request)
+            - session_input_tokens: Total input tokens this session
+            - session_output_tokens: Total output tokens this session
+            - session_total_tokens: Total tokens consumed this session
+            - message_count: Number of messages in conversation
+        """
+        return {
+            "context_tokens": self._last_context_tokens,
+            "session_input_tokens": self._session_input_tokens,
+            "session_output_tokens": self._session_output_tokens,
+            "session_total_tokens": self._session_input_tokens + self._session_output_tokens,
+            "message_count": len(self.messages),
+        }

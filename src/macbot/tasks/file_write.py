@@ -3,6 +3,8 @@
 Write content to a file on the filesystem.
 """
 
+import os
+
 from macbot.tasks.base import Task
 from macbot.tasks.registry import task_registry
 
@@ -42,6 +44,7 @@ class WriteFileTask(Task):
         Raises:
             PermissionError: If the file cannot be written.
         """
+        path = os.path.expanduser(path)
         mode = "a" if append else "w"
         with open(path, mode) as f:
             f.write(content)

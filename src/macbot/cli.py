@@ -138,6 +138,13 @@ def setup_logging(verbose: bool = False) -> None:
     )
 
 
+def _format_tokens(count: int) -> str:
+    """Format token count with K suffix for thousands."""
+    if count >= 1000:
+        return f"{count / 1000:.1f}K"
+    return str(count)
+
+
 async def interactive_loop(agent: Agent, verbose: bool = False) -> None:
     """Run an interactive chat loop with the agent.
 
@@ -145,24 +152,50 @@ async def interactive_loop(agent: Agent, verbose: bool = False) -> None:
         agent: The agent instance (may already have conversation history)
         verbose: Whether to show verbose output
     """
-    console.print("\n[dim]Type your message, or 'quit' to exit. Use 'clear' to reset conversation.[/dim]\n")
+    console.print("\n[dim]Type your message, or 'quit' to exit. Use 'clear' to reset conversation.[/dim]")
+    console.print("[dim]Commands: 'stats' shows token usage, 'help' for more.[/dim]\n")
 
     while True:
         try:
+            # Build prompt with token stats
+            stats = agent.get_token_stats()
+            ctx = _format_tokens(stats["context_tokens"])
+            total = _format_tokens(stats["session_total_tokens"])
+
+            if stats["session_total_tokens"] > 0:
+                prompt = f"[dim](ctx:{ctx} total:{total})[/dim] [bold blue]You:[/bold blue] "
+            else:
+                prompt = "[bold blue]You:[/bold blue] "
+
             # Get user input
-            user_input = console.input("[bold blue]You:[/bold blue] ").strip()
+            user_input = console.input(prompt).strip()
 
             if not user_input:
                 continue
 
             # Handle special commands
             if user_input.lower() in ("quit", "exit", "q"):
+                # Show final stats
+                stats = agent.get_token_stats()
+                if stats["session_total_tokens"] > 0:
+                    console.print(f"\n[dim]Session total: {stats['session_total_tokens']:,} tokens "
+                                  f"(in: {stats['session_input_tokens']:,}, out: {stats['session_output_tokens']:,})[/dim]")
                 console.print("[dim]Goodbye![/dim]")
                 break
 
             if user_input.lower() == "clear":
                 agent.reset()
-                console.print("[dim]Conversation cleared.[/dim]\n")
+                console.print("[dim]Conversation cleared - token session continues.[/dim]\n")
+                continue
+
+            if user_input.lower() == "stats":
+                stats = agent.get_token_stats()
+                console.print(f"\n[bold]Token Statistics[/bold]")
+                console.print(f"  Context size:    {stats['context_tokens']:,} tokens")
+                console.print(f"  Messages:        {stats['message_count']}")
+                console.print(f"  Session input:   {stats['session_input_tokens']:,} tokens")
+                console.print(f"  Session output:  {stats['session_output_tokens']:,} tokens")
+                console.print(f"  Session total:   {stats['session_total_tokens']:,} tokens\n")
                 continue
 
             if user_input.lower() == "help":
@@ -170,6 +203,7 @@ async def interactive_loop(agent: Agent, verbose: bool = False) -> None:
                     "Commands:\n"
                     "  quit, exit, q  - Exit the chat\n"
                     "  clear          - Clear conversation history\n"
+                    "  stats          - Show token usage statistics\n"
                     "  help           - Show this help\n"
                     "  tasks          - List available tasks\n"
                     "\nOr just type a message to chat with the agent.",
@@ -181,12 +215,21 @@ async def interactive_loop(agent: Agent, verbose: bool = False) -> None:
                 _show_tasks_summary(agent.task_registry)
                 continue
 
-            # Run the agent with the user's input
+            # Run the agent with the user's input (cancellable with Escape)
             console.print()
-            result = await agent.run(user_input, verbose=verbose)
-            console.print()
-            console.print(Markdown(result))
-            console.print()
+
+            from macbot.utils.cancellable import run_with_escape_cancel
+            result, cancelled = await run_with_escape_cancel(
+                agent.run(user_input, verbose=verbose)
+            )
+
+            if cancelled:
+                console.print("\n[dim][Cancelled by Escape][/dim]\n")
+            else:
+                console.print()
+                console.print("[bold green]A:[/bold green]", end=" ")
+                console.print(Markdown(result))
+                console.print("[dim]─" * 60 + "[/dim]\n")
 
         except KeyboardInterrupt:
             console.print("\n[dim]Use 'quit' to exit.[/dim]")
@@ -271,12 +314,22 @@ def cmd_run(args: argparse.Namespace) -> None:
         if verbose and not stream:
             console.print(Panel(f"[bold]Goal:[/bold] {goal}", title="Running"))
 
-        result = await agent.run(goal, verbose=verbose, stream=stream)
+        # Run with Escape cancellation support
+        from macbot.utils.cancellable import run_with_escape_cancel
+
+        result, cancelled = await run_with_escape_cancel(
+            agent.run(goal, verbose=verbose, stream=stream)
+        )
+
+        if cancelled:
+            console.print("\n[dim][Cancelled by Escape][/dim]")
+            return
 
         # When streaming, text was already printed via stream callback
         # Otherwise, print the final result with markdown rendering
         if not stream:
             console.print()
+            console.print("[bold green]A:[/bold green]", end=" ")
             console.print(Markdown(result))
 
         # Continue to interactive mode if requested
