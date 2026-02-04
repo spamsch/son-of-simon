@@ -60,6 +60,17 @@ class AgentMemory:
                 CREATE INDEX IF NOT EXISTS idx_emails_message_id ON emails_processed(message_id);
                 CREATE INDEX IF NOT EXISTS idx_emails_processed_at ON emails_processed(processed_at);
                 CREATE INDEX IF NOT EXISTS idx_reminders_source ON reminders_created(source_email_id);
+
+                -- Track file write operations
+                CREATE TABLE IF NOT EXISTS files_written (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    path TEXT NOT NULL,
+                    filename TEXT NOT NULL,
+                    summary TEXT,
+                    written_at TEXT DEFAULT CURRENT_TIMESTAMP
+                );
+                CREATE INDEX IF NOT EXISTS idx_files_written_at ON files_written(written_at);
+                CREATE INDEX IF NOT EXISTS idx_files_filename ON files_written(filename);
             """)
 
     # =========================================================================
@@ -243,6 +254,82 @@ class AgentMemory:
             conn.row_factory = sqlite3.Row
             cursor = conn.execute(query, params)
             return [dict(row) for row in cursor.fetchall()]
+
+    # =========================================================================
+    # File write tracking
+    # =========================================================================
+
+    def record_file_written(
+        self,
+        path: str,
+        summary: str = "",
+    ) -> int:
+        """Record that a file was written.
+
+        Args:
+            path: Full path to the file
+            summary: Brief description of the file/content purpose
+
+        Returns:
+            ID of the created record
+        """
+        import os
+        filename = os.path.basename(path)
+
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.execute(
+                """INSERT INTO files_written (path, filename, summary)
+                   VALUES (?, ?, ?)""",
+                (path, filename, summary)
+            )
+            return cursor.lastrowid or 0
+
+    def search_files_written(
+        self,
+        query: str | None = None,
+        days: int | None = None,
+        limit: int = 20,
+    ) -> list[dict[str, Any]]:
+        """Search for files that were written.
+
+        Args:
+            query: Search in filename and summary (optional)
+            days: Only show files from last N days
+            limit: Maximum number of results
+
+        Returns:
+            List of file records
+        """
+        sql = "SELECT * FROM files_written WHERE 1=1"
+        params: list[Any] = []
+
+        if query:
+            sql += " AND (filename LIKE ? OR summary LIKE ?)"
+            pattern = f"%{query}%"
+            params.extend([pattern, pattern])
+
+        if days:
+            sql += " AND written_at >= datetime('now', ?)"
+            params.append(f"-{days} days")
+
+        sql += " ORDER BY written_at DESC LIMIT ?"
+        params.append(limit)
+
+        with sqlite3.connect(self.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.execute(sql, params)
+            return [dict(row) for row in cursor.fetchall()]
+
+    def get_recent_files(self, limit: int = 10) -> list[dict[str, Any]]:
+        """Get recently written files.
+
+        Args:
+            limit: Maximum number of results
+
+        Returns:
+            List of recent file records
+        """
+        return self.search_files_written(limit=limit)
 
     # =========================================================================
     # Summary / Stats

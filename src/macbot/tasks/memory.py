@@ -383,6 +383,47 @@ class MemoryListTask(Task):
         }
 
 
+class SearchFilesWrittenTask(Task):
+    """Search for files that were written by the agent."""
+
+    @property
+    def name(self) -> str:
+        return "search_files_written"
+
+    @property
+    def description(self) -> str:
+        return (
+            "Search for files that were written by the agent. "
+            "Use this to recall documents - e.g., 'I worked on a document for Frank' "
+            "or 'What reports did I create last week?'. Searches filenames and summaries."
+        )
+
+    async def execute(
+        self,
+        query: str | None = None,
+        days: int | None = None,
+        limit: int = 20,
+    ) -> dict[str, Any]:
+        """Search for written files.
+
+        Args:
+            query: Search term (searches filename and summary)
+            days: Only show files from last N days
+            limit: Maximum number of results
+
+        Returns:
+            Dictionary with matching files
+        """
+        memory = get_memory()
+        files = memory.search_files_written(query=query, days=days, limit=limit)
+        return {
+            "success": True,
+            "count": len(files),
+            "query": query,
+            "files": files,
+        }
+
+
 class MemoryRemoveLessonTask(Task):
     """Remove a lesson from knowledge memory."""
 
@@ -428,6 +469,7 @@ def register_memory_tasks(registry) -> None:
     registry.register(ListProcessedEmailsTask())
     registry.register(RecordReminderCreatedTask())
     registry.register(GetAgentMemorySummaryTask())
+    registry.register(SearchFilesWrittenTask())
 
     # Knowledge memory tasks (YAML-based)
     registry.register(MemoryAddLessonTask())

@@ -28,14 +28,25 @@ class WriteFileTask(Task):
     @property
     def description(self) -> str:
         """Get the task description."""
-        return "Write content to a file at the specified path."
+        return (
+            "Write content to a file at the specified path. "
+            "Include a summary describing what the file is for (e.g., 'Report for Frank', "
+            "'Meeting notes from Monday') to help recall it later."
+        )
 
-    async def execute(self, path: str, content: str, append: bool = False) -> str:
+    async def execute(
+        self,
+        path: str,
+        content: str,
+        summary: str = "",
+        append: bool = False,
+    ) -> str:
         """Write content to a file.
 
         Args:
             path: File path to write to.
             content: Content to write.
+            summary: Brief description of the file purpose (e.g., "Report for Frank").
             append: If True, append to file instead of overwriting.
 
         Returns:
@@ -48,6 +59,12 @@ class WriteFileTask(Task):
         mode = "a" if append else "w"
         with open(path, mode) as f:
             f.write(content)
+
+        # Record the file write to memory
+        from macbot.memory import AgentMemory
+        memory = AgentMemory()
+        memory.record_file_written(path, summary)
+
         return f"Successfully wrote {len(content)} characters to {path}"
 
 
