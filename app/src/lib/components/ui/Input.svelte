@@ -45,11 +45,11 @@
       {placeholder}
       {disabled}
       bind:value
-      class="w-full px-4 py-2.5 bg-bg-input text-text placeholder-text-muted rounded-lg border transition-colors
+      class="w-full px-4 py-3 bg-bg-input text-text placeholder-text-muted rounded-xl border-2 transition-colors
              {error
         ? 'border-error focus:border-error focus:ring-error'
         : 'border-border focus:border-primary focus:ring-primary'}
-             focus:outline-none focus:ring-2 focus:ring-opacity-50
+             focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-bg
              disabled:opacity-50 disabled:cursor-not-allowed"
     />
 

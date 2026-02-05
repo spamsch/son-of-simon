@@ -4,14 +4,11 @@
   import {
     Shield,
     Check,
-    X,
+    Circle,
     ExternalLink,
-    RefreshCw,
-    Mail,
-    Calendar,
-    ListTodo,
-    StickyNote,
-    Globe,
+    ArrowRight,
+    ArrowLeft,
+    Info,
   } from "lucide-svelte";
   import { onboardingStore, type PermissionsData } from "$lib/stores/onboarding.svelte";
 
@@ -22,22 +19,8 @@
 
   let { onNext, onBack }: Props = $props();
 
-  let checking = $state(false);
-
-  const apps = [
-    { key: "Mail", icon: Mail, name: "Mail" },
-    { key: "Calendar", icon: Calendar, name: "Calendar" },
-    { key: "Reminders", icon: ListTodo, name: "Reminders" },
-    { key: "Notes", icon: StickyNote, name: "Notes" },
-    { key: "Safari", icon: Globe, name: "Safari" },
-  ];
-
   // Derive permission state from store
   let permissions = $derived(onboardingStore.state.data.permissions);
-  let allGranted = $derived(
-    permissions.accessibility &&
-      Object.values(permissions.automation).every(Boolean)
-  );
 
   async function openAccessibilitySettings() {
     await invoke("open_system_preferences", {
@@ -51,131 +34,105 @@
     });
   }
 
-  async function checkPermissions() {
-    checking = true;
-    try {
-      // In a real implementation, this would call `son doctor --json`
-      // and parse the results. For now, we'll simulate checking.
-      // The actual permission check would be done via the sidecar.
-
-      // Simulated delay for UX
-      await new Promise((resolve) => setTimeout(resolve, 1000));
-
-      // TODO: Actually check permissions via sidecar
-      // const result = await Command.create("son", ["doctor", "--json"]).execute();
-      // const doctorOutput = JSON.parse(result.stdout);
-      // await onboardingStore.updatePermissions(doctorOutput.permissions);
-    } finally {
-      checking = false;
-    }
-  }
-
   function handleContinue() {
-    // Allow continuing even without all permissions (with warning)
     onNext();
   }
 </script>
 
-<div class="flex flex-col px-8 py-6">
-  <div class="flex items-center gap-3 mb-2">
-    <div class="p-2 bg-primary/20 rounded-lg">
+<div class="flex flex-col px-10 py-8">
+  <div class="flex items-center gap-3 mb-3">
+    <div class="p-2 bg-primary/10 rounded-lg">
       <Shield class="w-6 h-6 text-primary" />
     </div>
-    <h2 class="text-2xl font-bold text-text">Grant Permissions</h2>
+    <h2 class="text-2xl font-bold text-text">Allow Access to Your Mac</h2>
   </div>
 
-  <p class="text-text-muted mb-6">
-    Son of Simon needs permission to control macOS apps. Grant access in System
-    Settings.
+  <p class="text-text-muted mb-8">
+    For Son of Simon to help you, macOS needs your permission. This keeps you in control
+    of what the app can do.
   </p>
 
-  <!-- Accessibility Permission -->
+  <!-- Step 1: Accessibility -->
   <div class="mb-6">
-    <div
-      class="flex items-center justify-between p-4 bg-bg-card rounded-lg border border-border"
-    >
-      <div class="flex items-center gap-3">
-        <div
-          class="w-8 h-8 rounded-full flex items-center justify-center
-                 {permissions.accessibility
-            ? 'bg-success/20 text-success'
-            : 'bg-bg-input text-text-muted'}"
-        >
-          {#if permissions.accessibility}
-            <Check class="w-4 h-4" />
-          {:else}
-            <X class="w-4 h-4" />
-          {/if}
+    <div class="flex items-start gap-4 p-5 bg-bg-card rounded-xl border border-border">
+      <div class="w-8 h-8 rounded-full bg-primary text-white flex items-center justify-center font-bold shrink-0">
+        1
+      </div>
+      <div class="flex-1">
+        <h3 class="font-semibold text-text mb-2">Enable Accessibility Access</h3>
+        <p class="text-sm text-text-muted mb-4">
+          This allows Son of Simon to interact with other apps on your Mac. When System Settings opens:
+        </p>
+        <ol class="text-sm text-text-muted space-y-2 mb-4 ml-4">
+          <li class="flex gap-2">
+            <span class="text-primary font-medium">1.</span>
+            <span>Click the <strong class="text-text">+</strong> button at the bottom of the list</span>
+          </li>
+          <li class="flex gap-2">
+            <span class="text-primary font-medium">2.</span>
+            <span>Find and select <strong class="text-text">Son of Simon</strong> in your Applications folder</span>
+          </li>
+          <li class="flex gap-2">
+            <span class="text-primary font-medium">3.</span>
+            <span>Make sure the toggle next to it is turned <strong class="text-text">on</strong></span>
+          </li>
+        </ol>
+        <Button onclick={openAccessibilitySettings}>
+          Open Accessibility Settings
+          <ExternalLink class="w-4 h-4" />
+        </Button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Step 2: Automation (Optional) -->
+  <div class="mb-6">
+    <div class="flex items-start gap-4 p-5 bg-bg-card rounded-xl border border-border">
+      <div class="w-8 h-8 rounded-full bg-primary text-white flex items-center justify-center font-bold shrink-0">
+        2
+      </div>
+      <div class="flex-1">
+        <div class="flex items-center gap-2 mb-2">
+          <h3 class="font-semibold text-text">Allow App Automation</h3>
+          <span class="text-xs bg-bg-card border border-border px-2 py-0.5 rounded text-text-muted">
+            Will appear after first use
+          </span>
         </div>
-        <div>
-          <h3 class="font-medium text-text">Accessibility</h3>
-          <p class="text-sm text-text-muted">Required for automation</p>
+        <p class="text-sm text-text-muted mb-4">
+          The first time Son of Simon tries to control an app (like Mail or Calendar),
+          macOS will ask for your permission. Just click <strong class="text-text">"OK"</strong> when prompted.
+        </p>
+        <div class="flex items-start gap-2 p-3 bg-primary/5 rounded-lg border border-primary/20">
+          <Info class="w-4 h-4 text-primary shrink-0 mt-0.5" />
+          <p class="text-xs text-text-muted">
+            You can also manage these permissions later in System Settings → Privacy & Security → Automation
+          </p>
         </div>
       </div>
-      <Button variant="secondary" size="sm" onclick={openAccessibilitySettings}>
-        Open Settings
-        <ExternalLink class="w-4 h-4" />
-      </Button>
     </div>
   </div>
 
-  <!-- Automation Permissions -->
-  <div class="mb-6">
-    <div class="flex items-center justify-between mb-3">
-      <h3 class="font-medium text-text">App Automation</h3>
-      <Button variant="ghost" size="sm" onclick={openAutomationSettings}>
-        Open Settings
-        <ExternalLink class="w-4 h-4" />
-      </Button>
-    </div>
-
-    <div class="grid grid-cols-2 gap-2">
-      {#each apps as app}
-        <div
-          class="flex items-center gap-3 p-3 bg-bg-card rounded-lg border border-border"
-        >
-          <div
-            class="w-6 h-6 rounded flex items-center justify-center
-                   {permissions.automation[app.key]
-              ? 'bg-success/20 text-success'
-              : 'bg-bg-input text-text-muted'}"
-          >
-            {#if permissions.automation[app.key]}
-              <Check class="w-3 h-3" />
-            {:else}
-              <X class="w-3 h-3" />
-            {/if}
-          </div>
-          <app.icon class="w-4 h-4 text-text-muted" />
-          <span class="text-sm text-text">{app.name}</span>
-        </div>
-      {/each}
+  <!-- Info box -->
+  <div class="flex items-start gap-3 p-4 bg-bg-card rounded-xl border border-border mb-6">
+    <Info class="w-5 h-5 text-primary shrink-0 mt-0.5" />
+    <div>
+      <p class="text-sm text-text-muted">
+        <strong class="text-text">Why is this needed?</strong> macOS protects your privacy by requiring
+        apps to ask before they can control other apps. Son of Simon needs this to read your emails,
+        create calendar events, and perform other tasks on your behalf.
+      </p>
     </div>
   </div>
-
-  <!-- Refresh Button -->
-  <Button
-    variant="secondary"
-    onclick={checkPermissions}
-    loading={checking}
-    disabled={checking}
-  >
-    <RefreshCw class="w-4 h-4" />
-    Check Permissions
-  </Button>
-
-  {#if !allGranted}
-    <p class="text-sm text-warning mt-4 text-center">
-      Some permissions are not granted. You can continue, but some features may
-      not work.
-    </p>
-  {/if}
 
   <!-- Navigation -->
-  <div class="flex justify-between mt-6 pt-6 border-t border-border">
-    <Button variant="ghost" onclick={onBack}>Back</Button>
+  <div class="flex justify-between pt-6 border-t border-border">
+    <Button variant="ghost" onclick={onBack}>
+      <ArrowLeft class="w-4 h-4" />
+      Back
+    </Button>
     <Button onclick={handleContinue}>
-      {allGranted ? "Continue" : "Continue Anyway"}
+      Continue
+      <ArrowRight class="w-4 h-4" />
     </Button>
   </div>
 </div>

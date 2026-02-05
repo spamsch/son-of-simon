@@ -13,12 +13,12 @@
     "windows": [
       {
         "title": "Son of Simon",
-        "width": 720,
-        "height": 560,
+        "width": 800,
+        "height": 720,
         "resizable": true,
         "center": true,
-        "minWidth": 600,
-        "minHeight": 480
+        "minWidth": 700,
+        "minHeight": 640
       }
     ],
     "security": {

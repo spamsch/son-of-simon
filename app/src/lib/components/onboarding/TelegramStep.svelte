@@ -2,7 +2,7 @@
   import { Button, Input } from "$lib/components/ui";
   import { invoke } from "@tauri-apps/api/core";
   import { open } from "@tauri-apps/plugin-shell";
-  import { MessageSquare, ExternalLink, Check, AlertCircle } from "lucide-svelte";
+  import { MessageSquare, ExternalLink, Check, AlertCircle, ArrowRight, ArrowLeft, Info, Smartphone } from "lucide-svelte";
   import { onboardingStore } from "$lib/stores/onboarding.svelte";
 
   interface Props {
@@ -13,17 +13,9 @@
   let { onNext, onBack }: Props = $props();
 
   let botToken = $state("");
-  let chatId = $state("");
   let saving = $state(false);
   let configured = $state(onboardingStore.state.data.telegram.configured);
   let error = $state<string | null>(null);
-
-  const steps = [
-    "Open Telegram and search for @BotFather",
-    "Send /newbot and follow the prompts to create your bot",
-    "Copy the bot token provided by BotFather",
-    "Send a message to your new bot, then come back here",
-  ];
 
   async function openTelegram() {
     await open("https://t.me/BotFather");
@@ -31,7 +23,7 @@
 
   async function saveConfig() {
     if (!botToken.trim()) {
-      error = "Please enter your bot token";
+      error = "Please paste your bot token in the field above";
       return;
     }
 
@@ -41,7 +33,7 @@
     try {
       // Validate token format
       if (!/^\d+:[A-Za-z0-9_-]+$/.test(botToken)) {
-        error = "Invalid bot token format";
+        error = "This doesn't look like a valid bot token. It should look like: 123456789:ABCdefGHI...";
         return;
       }
 
@@ -59,9 +51,6 @@
       });
 
       lines.push(`TELEGRAM_BOT_TOKEN=${botToken}`);
-      if (chatId.trim()) {
-        lines.push(`TELEGRAM_CHAT_ID=${chatId}`);
-      }
 
       await invoke("write_config", { content: lines.join("\n") + "\n" });
 
@@ -71,7 +60,7 @@
         skipped: false,
       });
     } catch (e) {
-      error = `Failed to save Telegram config: ${e}`;
+      error = `Something went wrong: ${e}`;
     } finally {
       saving = false;
     }
@@ -90,97 +79,114 @@
   }
 </script>
 
-<div class="flex flex-col px-8 py-6">
-  <div class="flex items-center gap-3 mb-2">
-    <div class="p-2 bg-primary/20 rounded-lg">
-      <MessageSquare class="w-6 h-6 text-primary" />
+<div class="flex flex-col px-10 py-8">
+  <div class="flex items-center gap-3 mb-3">
+    <div class="p-2 bg-primary/10 rounded-lg">
+      <Smartphone class="w-6 h-6 text-primary" />
     </div>
-    <h2 class="text-2xl font-bold text-text">Telegram Integration</h2>
-    <span class="text-xs bg-bg-card text-text-muted px-2 py-1 rounded">
+    <h2 class="text-2xl font-bold text-text">Control From Your Phone</h2>
+    <span class="text-xs bg-primary/10 text-primary px-2 py-1 rounded-full font-medium">
       Optional
     </span>
   </div>
 
   <p class="text-text-muted mb-6">
-    Control Son of Simon from anywhere using Telegram. You can skip this and set
-    it up later.
+    Want to send commands to your Mac from anywhere? Connect Telegram and you can text
+    Son of Simon from your phone, even when you're not at your computer.
   </p>
 
-  <!-- Setup Steps -->
-  <div class="mb-6 p-4 bg-bg-card rounded-lg border border-border">
-    <h3 class="font-medium text-text mb-3">How to set up:</h3>
-    <ol class="space-y-2">
-      {#each steps as step, i}
-        <li class="flex items-start gap-3 text-sm">
-          <span
-            class="w-5 h-5 rounded-full bg-bg-input flex items-center justify-center text-xs text-text-muted shrink-0"
-          >
-            {i + 1}
-          </span>
-          <span class="text-text-muted">{step}</span>
-        </li>
-      {/each}
-    </ol>
-
-    <Button variant="secondary" size="sm" onclick={openTelegram} class="mt-4">
-      Open Telegram
-      <ExternalLink class="w-4 h-4" />
-    </Button>
+  <!-- What is this? -->
+  <div class="flex items-start gap-3 p-4 bg-bg-card rounded-xl border border-border mb-6">
+    <Info class="w-5 h-5 text-primary shrink-0 mt-0.5" />
+    <div>
+      <p class="text-sm text-text-muted">
+        <strong class="text-text">How does this work?</strong> You'll create a personal Telegram bot
+        that only you can use. When you send it a message, Son of Simon will receive it and
+        perform the task on your Mac.
+      </p>
+    </div>
   </div>
 
   {#if !configured}
-    <!-- Bot Token Input -->
-    <div class="space-y-4 mb-6">
-      <Input
-        type="password"
-        label="Bot Token"
-        placeholder="123456789:ABCdefGHIjklMNOpqrsTUVwxyz"
-        bind:value={botToken}
-      />
-
-      <Input
-        type="text"
-        label="Chat ID (optional)"
-        placeholder="Your Telegram user ID"
-        bind:value={chatId}
-      />
-
-      <p class="text-xs text-text-muted">
-        The chat ID will be detected automatically when you send your first
-        message to the bot.
-      </p>
+    <!-- Setup Steps -->
+    <div class="mb-6 p-5 bg-bg-card rounded-xl border border-border">
+      <h3 class="font-semibold text-text mb-4">How to set up Telegram:</h3>
+      <ol class="text-sm text-text-muted space-y-3 mb-5">
+        <li class="flex gap-3">
+          <span class="w-6 h-6 rounded-full bg-primary text-white flex items-center justify-center text-xs font-bold shrink-0">1</span>
+          <span>Open Telegram on your phone or computer and search for <strong class="text-text">@BotFather</strong></span>
+        </li>
+        <li class="flex gap-3">
+          <span class="w-6 h-6 rounded-full bg-primary text-white flex items-center justify-center text-xs font-bold shrink-0">2</span>
+          <span>Send the message <strong class="text-text">/newbot</strong> and follow the instructions to name your bot</span>
+        </li>
+        <li class="flex gap-3">
+          <span class="w-6 h-6 rounded-full bg-primary text-white flex items-center justify-center text-xs font-bold shrink-0">3</span>
+          <span>BotFather will give you a token (a long string of numbers and letters) - copy it</span>
+        </li>
+        <li class="flex gap-3">
+          <span class="w-6 h-6 rounded-full bg-primary text-white flex items-center justify-center text-xs font-bold shrink-0">4</span>
+          <span>Paste the token below and click "Save"</span>
+        </li>
+      </ol>
+      <Button variant="secondary" onclick={openTelegram}>
+        Open Telegram BotFather
+        <ExternalLink class="w-4 h-4" />
+      </Button>
     </div>
 
-    <Button onclick={saveConfig} loading={saving} disabled={saving}>
-      Save Telegram Config
+    <!-- Bot Token Input -->
+    <div class="mb-6">
+      <Input
+        type="password"
+        label="Paste your bot token here"
+        placeholder="123456789:ABCdefGHIjklMNOpqrsTUVwxyz..."
+        bind:value={botToken}
+        error={error ?? undefined}
+      />
+    </div>
+
+    <Button onclick={saveConfig} loading={saving} disabled={saving || !botToken.trim()}>
+      {saving ? "Saving..." : "Save Bot Token"}
     </Button>
   {:else}
-    <div
-      class="flex items-center gap-2 p-4 bg-success/10 text-success rounded-lg mb-6"
-    >
-      <Check class="w-5 h-5" />
-      <span class="font-medium">Telegram configured!</span>
+    <!-- Success State -->
+    <div class="flex items-center gap-3 p-5 bg-success/10 rounded-xl border border-success/30 mb-6">
+      <div class="w-10 h-10 rounded-full bg-success/20 flex items-center justify-center">
+        <Check class="w-6 h-6 text-success" />
+      </div>
+      <div>
+        <p class="font-semibold text-success">Telegram connected!</p>
+        <p class="text-sm text-text-muted">Send a message to your bot to test it once setup is complete.</p>
+      </div>
     </div>
   {/if}
 
-  {#if error}
-    <div
-      class="flex items-center gap-2 mt-4 p-4 bg-error/10 text-error rounded-lg"
-    >
-      <AlertCircle class="w-5 h-5 shrink-0" />
-      <span class="text-sm">{error}</span>
+  {#if error && !configured}
+    <div class="flex items-start gap-3 mt-4 p-4 bg-error/10 rounded-xl border border-error/30">
+      <AlertCircle class="w-5 h-5 text-error shrink-0 mt-0.5" />
+      <div>
+        <p class="font-medium text-error">There was a problem</p>
+        <p class="text-sm text-text-muted">{error}</p>
+      </div>
     </div>
   {/if}
 
   <!-- Navigation -->
   <div class="flex justify-between mt-6 pt-6 border-t border-border">
-    <Button variant="ghost" onclick={onBack}>Back</Button>
+    <Button variant="ghost" onclick={onBack}>
+      <ArrowLeft class="w-4 h-4" />
+      Back
+    </Button>
     <div class="flex gap-3">
       {#if !configured}
-        <Button variant="secondary" onclick={skip}>Skip for Now</Button>
+        <Button variant="secondary" onclick={skip}>
+          Skip for Now
+        </Button>
       {/if}
-      <Button onclick={handleContinue} disabled={!configured && !botToken}>
-        Continue
+      <Button onclick={handleContinue}>
+        {configured ? "Continue" : "Continue"}
+        <ArrowRight class="w-4 h-4" />
       </Button>
     </div>
   </div>

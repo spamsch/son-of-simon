@@ -53,10 +53,10 @@
 {:else}
   <div class="min-h-screen flex flex-col items-center justify-center p-6">
     <Card padding="none">
-      <div class="w-[600px] max-w-full">
+      <div class="w-[680px] max-w-full">
         <!-- Step Indicator (not shown on welcome) -->
         {#if currentStep !== "welcome"}
-          <div class="px-8 pt-6">
+          <div class="px-6 pt-4">
             <StepIndicator
               steps={STEPS.slice(1).map((s) => STEP_LABELS[s])}
               currentStep={currentStepIndex - 1}
@@ -65,7 +65,7 @@
         {/if}
 
         <!-- Step Content -->
-        <div class="min-h-[400px]">
+        <div>
           {#if currentStep === "welcome"}
             <WelcomeStep onNext={nextStep} />
           {:else if currentStep === "permissions"}
