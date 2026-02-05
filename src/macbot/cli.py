@@ -1,6 +1,6 @@
-"""Command-line interface for MacBot.
+"""Command-line interface for Son of Simon.
 
-MacBot is an LLM-powered agent that can execute tasks to achieve goals.
+Son of Simon is an LLM-powered agent for macOS automation.
 
 CONCEPTS:
 ---------
@@ -261,7 +261,7 @@ def cmd_chat(args: argparse.Namespace) -> None:
     agent = Agent(registry)
 
     console.print(Panel(
-        f"[bold]MacBot Chat[/bold] v{__version__}\n\n"
+        f"[bold]Son of Simon[/bold] v{__version__}\n\n"
         f"Model: {settings.model}\n"
         f"Tasks available: {len(registry)}",
         title="Welcome"
@@ -672,7 +672,7 @@ def cmd_schedule_log(args: argparse.Namespace) -> None:
 
 def cmd_version(args: argparse.Namespace) -> None:
     """Show version and configuration information."""
-    console.print(f"[bold]MacBot[/bold] v{__version__}")
+    console.print(f"[bold]Son of Simon[/bold] v{__version__}")
     console.print(f"Model: {settings.model}")
     console.print(f"Max iterations: {settings.max_iterations}")
 

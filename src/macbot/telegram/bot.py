@@ -101,7 +101,7 @@ class TelegramBot:
         updates = await self._bot.get_updates(
             offset=offset,
             timeout=timeout,
-            allowed_updates=["message"],
+            allowed_updates=["message"],  # Includes text, voice, and other message types
         )
         return list(updates)
 

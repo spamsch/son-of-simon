@@ -7,6 +7,7 @@ through the agent, and sends back responses.
 import asyncio
 import logging
 import signal
+import tempfile
 from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import Any
@@ -106,19 +107,86 @@ class TelegramService:
             return True
         return str(user_id) in self.allowed_users
 
+    async def _transcribe_voice(self, voice_file_id: str) -> str | None:
+        """Download and transcribe a voice message using OpenAI Whisper.
+
+        Args:
+            voice_file_id: Telegram file ID for the voice message
+
+        Returns:
+            Transcribed text or None if transcription failed
+        """
+        try:
+            from openai import AsyncOpenAI
+            from macbot.config import settings
+
+            if not settings.openai_api_key:
+                logger.error("OpenAI API key not configured for voice transcription")
+                return None
+
+            # Download the voice file from Telegram
+            file = await self.bot._bot.get_file(voice_file_id)
+
+            with tempfile.NamedTemporaryFile(suffix=".ogg", delete=False) as tmp:
+                tmp_path = Path(tmp.name)
+                await file.download_to_drive(tmp_path)
+
+            try:
+                # Transcribe using OpenAI Whisper
+                client = AsyncOpenAI(api_key=settings.openai_api_key)
+                with open(tmp_path, "rb") as audio_file:
+                    transcript = await client.audio.transcriptions.create(
+                        model="whisper-1",
+                        file=audio_file,
+                    )
+                return transcript.text
+            finally:
+                # Clean up temp file
+                tmp_path.unlink(missing_ok=True)
+
+        except Exception as e:
+            logger.exception(f"Error transcribing voice message: {e}")
+            return None
+
     async def _process_update(self, update: Update) -> None:
         """Process a single update from Telegram.
 
         Args:
             update: Telegram Update object
         """
-        if not update.message or not update.message.text:
+        if not update.message:
             return
 
         message = update.message
         user_id = message.from_user.id if message.from_user else None
         chat_id = str(message.chat_id)
-        text = message.text
+
+        # Handle voice messages (voice notes) and audio files
+        if message.voice:
+            text = await self._transcribe_voice(message.voice.file_id)
+            if not text:
+                await self.send_message(
+                    "Sorry, I couldn't transcribe your voice message.",
+                    chat_id,
+                    parse_mode=None,
+                )
+                return
+            logger.info(f"Transcribed voice message: {text[:50]}...")
+        elif message.audio:
+            text = await self._transcribe_voice(message.audio.file_id)
+            if not text:
+                await self.send_message(
+                    "Sorry, I couldn't transcribe your audio file.",
+                    chat_id,
+                    parse_mode=None,
+                )
+                return
+            logger.info(f"Transcribed audio file: {text[:50]}...")
+        elif message.text:
+            text = message.text
+        else:
+            # Neither text nor voice/audio
+            return
 
         # Check user permissions
         if user_id and not self._is_user_allowed(user_id):

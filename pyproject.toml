@@ -3,9 +3,9 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "macbot"
-version = "0.1.32"
-description = "A modular agent loop that runs scheduled tasks with LLM integration"
+name = "sonofsimon"
+version = "0.1.33"
+description = "Son of Simon - An LLM-powered agent for macOS automation"
 readme = "README.md"
 requires-python = ">=3.10"
 license = "MIT"

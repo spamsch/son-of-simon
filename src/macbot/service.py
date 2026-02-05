@@ -183,6 +183,14 @@ class MacbotService:
                 # Restore original method
                 agent._execute_tool_calls = original_execute
 
+                # Show response in terminal
+                timestamp = datetime.now().strftime("%H:%M:%S")
+                print(f"[{timestamp}] 🤖 Response:")
+                # Indent the response for readability
+                for line in result.split('\n'):
+                    print(f"    {line}")
+                print()
+
                 logger.info(f"Telegram: Response sent, length: {len(result)}, tools: {len(tools_called)}")
                 return result
             except Exception as e:
