@@ -20,6 +20,24 @@
 - **Browser Automation** - ARIA-based web interaction with screenshots and element detection
 - **Voice Commands** - Send voice messages via Telegram, automatically transcribed via Whisper
 
+## Use Cases
+
+**"Book a table for dinner"** — Ask Son of Simon to book a restaurant for Saturday evening. It searches the web, finds the booking page, fills out the form, and confirms the reservation.
+
+**"What's in my inbox?"** — Get a summary of your unread emails. Ask follow-up questions like "any tracking numbers?" or "reply to the Amazon one saying thanks."
+
+**"Remind me about my dentist appointment"** — Son of Simon checks your calendar and creates a reminder. Or ask it to reschedule if something came up.
+
+**"Where's my package?"** — Son of Simon searches your emails for tracking numbers, checks the carrier's website, and tells you when it'll arrive.
+
+**"Morning briefing"** — Set up a daily job that sends you a Telegram message with today's calendar, pending reminders, and important emails.
+
+**"Track my time on this project"** — Start and stop timers for client work. Get weekly reports of how you spent your hours.
+
+**"Find my tax documents"** — If you use Paperless-ngx, Son of Simon searches your document archive and can download what you need.
+
+**"Just talk to it"** — Send a voice message via Telegram while you're on the go. Son of Simon transcribes it and gets to work.
+
 ## Quick Start
 
 ```bash
@@ -27,36 +45,36 @@
 pip install -e .
 
 # Interactive setup wizard
-macbot onboard
+son onboard
 
 # Run a goal
-macbot run "Check my emails and summarize urgent ones"
+son run "Check my emails and summarize urgent ones"
 
 # Multiline prompt
-macbot run -m
+son run -m
 
 # Start service (Telegram + cron jobs)
-macbot start
+son start
 ```
 
 ## Commands
 
 | Command | Description |
 |---------|-------------|
-| `macbot run "<goal>"` | Run a natural language goal |
-| `macbot run -m` | Run with multiline input (Ctrl+D to end) |
-| `macbot chat` | Interactive conversation mode |
-| `macbot start` | Start service (Telegram + cron) |
-| `macbot stop` | Stop the service |
-| `macbot status` | Check service status |
-| `macbot doctor` | Verify setup and permissions |
-| `macbot onboard` | Interactive setup wizard |
-| `macbot tasks` | List available tasks |
-| `macbot cron list` | List scheduled jobs |
+| `son run "<goal>"` | Run a natural language goal |
+| `son run -m` | Run with multiline input (Ctrl+D to end) |
+| `son chat` | Interactive conversation mode |
+| `son start` | Start service (Telegram + cron) |
+| `son stop` | Stop the service |
+| `son status` | Check service status |
+| `son doctor` | Verify setup and permissions |
+| `son onboard` | Interactive setup wizard |
+| `son tasks` | List available tasks |
+| `son cron list` | List scheduled jobs |
 
 ## Configuration
 
-Run `macbot onboard` for interactive setup, or create `~/.macbot/.env`:
+Run `son onboard` for interactive setup, or create `~/.macbot/.env`:
 
 ```bash
 # LLM Model (provider/model format)
@@ -130,15 +148,15 @@ jobs:
 ```
 
 ```bash
-macbot cron import jobs.yaml
-macbot start -d  # Start as daemon
+son cron import jobs.yaml
+son start -d  # Start as daemon
 ```
 
 ## Telegram Usage
 
 1. Create a bot via [@BotFather](https://t.me/BotFather)
-2. Run `macbot onboard` to configure
-3. Start service: `macbot start`
+2. Run `son onboard` to configure
+3. Start service: `son start`
 4. Send text or voice messages to your bot
 
 Special commands in Telegram:
@@ -150,27 +168,27 @@ Conversation context is preserved between messages for natural back-and-forth ch
 
 ```bash
 # Email management
-macbot run "Find emails from Amazon this week and list any with tracking numbers"
+son run "Find emails from Amazon this week and list any with tracking numbers"
 
 # Calendar
-macbot run "What meetings do I have tomorrow? Create reminders 15 min before each"
+son run "What meetings do I have tomorrow? Create reminders 15 min before each"
 
 # Bookings
-macbot run "Book a table at Restaurant Eichenhof for Saturday 7pm, 2 people"
+son run "Book a table at Restaurant Eichenhof for Saturday 7pm, 2 people"
 
 # Paperless
-macbot run "Search paperless for invoices from 2024"
+son run "Search paperless for invoices from 2024"
 
 # Browser automation
-macbot run "Open google.com, search for 'weather', and take a screenshot"
+son run "Open google.com, search for 'weather', and take a screenshot"
 
 # Time tracking
-macbot run "Start a timer for client work"
-macbot run "Stop the timer"
-macbot run "Show my time report for this week"
+son run "Start a timer for client work"
+son run "Stop the timer"
+son run "Show my time report for this week"
 
 # Complex workflows
-macbot run "Check my emails, archive newsletters, and send me a Telegram summary"
+son run "Check my emails, archive newsletters, and send me a Telegram summary"
 ```
 
 ## Architecture
