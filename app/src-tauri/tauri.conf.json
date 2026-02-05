@@ -40,7 +40,21 @@
     "shortDescription": "AI-powered macOS automation",
     "longDescription": "Son of Simon is your AI assistant that can interact with macOS applications like Mail, Calendar, Reminders, and more through natural language commands.",
     "macOS": {
-      "minimumSystemVersion": "12.0"
+      "minimumSystemVersion": "12.0",
+      "dmg": {
+        "windowSize": {
+          "width": 540,
+          "height": 380
+        },
+        "appPosition": {
+          "x": 140,
+          "y": 180
+        },
+        "applicationFolderPosition": {
+          "x": 400,
+          "y": 180
+        }
+      }
     }
   },
   "plugins": {
