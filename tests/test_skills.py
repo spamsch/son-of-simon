@@ -144,24 +144,13 @@ Always confirm before sending.
         assert skill.requires_permissions == ["Automation:Mail"]
         assert "Always confirm before sending" in skill.body
 
-    def test_load_missing_id(self) -> None:
-        """Test that missing id raises ValueError."""
+    def test_load_missing_id_and_name(self) -> None:
+        """Test that missing both id and name raises ValueError."""
         content = """---
-name: Test
 description: Test
 ---
 """
-        with pytest.raises(ValueError, match="must have an 'id' field"):
-            load_skill_from_string(content)
-
-    def test_load_missing_name(self) -> None:
-        """Test that missing name raises ValueError."""
-        content = """---
-id: test
-description: Test
----
-"""
-        with pytest.raises(ValueError, match="must have a 'name' field"):
+        with pytest.raises(ValueError, match="must have an 'id' or 'name' field"):
             load_skill_from_string(content)
 
     def test_load_missing_description(self) -> None:
@@ -386,12 +375,11 @@ name: Valid
 description: Valid skill
 ---
 """)
-        # Malformed skill (missing id)
+        # Malformed skill (missing both id and name)
         malformed_dir = builtin_dir / "malformed"
         malformed_dir.mkdir(parents=True)
         (malformed_dir / "SKILL.md").write_text("""---
-name: Malformed
-description: Missing id
+description: Missing id and name
 ---
 """)
         registry = SkillsRegistry(
@@ -970,3 +958,130 @@ tasks:
         names = [s["name"] for s in schemas]
         assert names.count("get_system_info") == 1
         assert "get_current_time" in names
+
+
+class TestAgentSkillsCompatibility:
+    """Tests for AgentSkills standard / OpenClaw SKILL.md compatibility."""
+
+    def test_agentskills_name_only_format(self) -> None:
+        """Test loading a skill with only `name` (no `id`), as per AgentSkills spec."""
+        content = """---
+name: pdf-processing
+description: Extract text and tables from PDF files.
+---
+
+Use the pdf tool to process documents.
+"""
+        skill = load_skill_from_string(content)
+
+        assert skill.id == "pdf-processing"
+        assert skill.name == "pdf-processing"
+        assert skill.description == "Extract text and tables from PDF files."
+        assert "Use the pdf tool" in skill.body
+
+    def test_agentskills_id_only_format(self) -> None:
+        """Test loading a skill with only `id` (no `name`) uses id as name."""
+        content = """---
+id: my_skill
+description: A skill with only an id field.
+---
+"""
+        skill = load_skill_from_string(content)
+
+        assert skill.id == "my_skill"
+        assert skill.name == "my_skill"
+
+    def test_agentskills_allowed_tools(self) -> None:
+        """Test that `allowed-tools` is mapped to `tasks`."""
+        content = """---
+name: git-helper
+description: Help with git operations.
+allowed-tools: Bash Read Write
+---
+"""
+        skill = load_skill_from_string(content)
+
+        assert skill.tasks == ["Bash", "Read", "Write"]
+
+    def test_agentskills_allowed_tools_does_not_override_tasks(self) -> None:
+        """Test that explicit `tasks` take priority over `allowed-tools`."""
+        content = """---
+id: test
+name: Test
+description: Test
+tasks:
+  - search_emails
+allowed-tools: Bash Read
+---
+"""
+        skill = load_skill_from_string(content)
+
+        assert skill.tasks == ["search_emails"]
+
+    def test_agentskills_extra_fields_in_metadata(self) -> None:
+        """Test that unknown frontmatter fields are stored in metadata."""
+        content = """---
+name: doc-processor
+description: Process documents.
+license: Apache-2.0
+compatibility: Requires pandoc
+homepage: https://example.com/doc-processor
+user-invocable: true
+---
+"""
+        skill = load_skill_from_string(content)
+
+        assert skill.metadata["license"] == "Apache-2.0"
+        assert skill.metadata["compatibility"] == "Requires pandoc"
+        assert skill.metadata["homepage"] == "https://example.com/doc-processor"
+        assert skill.metadata["user-invocable"] is True
+
+    def test_agentskills_full_openclaw_style_skill(self) -> None:
+        """Test loading a full OpenClaw-style skill."""
+        content = """---
+name: macos-mail
+description: Search, read, and manage Apple Mail.
+homepage: https://github.com/example/macos-mail
+license: MIT
+---
+
+## Usage
+
+Run `osascript` to interact with Apple Mail.
+
+## Examples
+
+- "Show unread emails"
+- "Search for emails from John"
+"""
+        skill = load_skill_from_string(content)
+
+        assert skill.id == "macos-mail"
+        assert skill.name == "macos-mail"
+        assert skill.metadata["homepage"] == "https://github.com/example/macos-mail"
+        assert skill.metadata["license"] == "MIT"
+        assert "osascript" in skill.body
+
+    def test_agentskills_skill_in_registry(self, tmp_path: Path) -> None:
+        """Test that AgentSkills-format skills load correctly in the registry."""
+        user_dir = tmp_path / "user"
+        skill_dir = user_dir / "git-helper"
+        skill_dir.mkdir(parents=True)
+        (skill_dir / "SKILL.md").write_text("""---
+name: git-helper
+description: Help with git operations.
+license: MIT
+---
+
+Use git commands to manage repositories.
+""")
+        registry = SkillsRegistry(
+            builtin_dir=tmp_path / "builtin",
+            user_dir=user_dir,
+            config_file=tmp_path / "config.json",
+        )
+
+        skill = registry.get("git-helper")
+        assert skill is not None
+        assert skill.name == "git-helper"
+        assert skill.metadata["license"] == "MIT"

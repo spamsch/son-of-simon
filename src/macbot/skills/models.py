@@ -65,6 +65,12 @@ class Skill(BaseModel):
         description="ID of built-in skill to extend (merges examples, tasks, etc.)",
     )
 
+    # Extra frontmatter fields (for AgentSkills standard compatibility)
+    metadata: dict[str, Any] = Field(
+        default_factory=dict,
+        description="Extra frontmatter fields not part of the core schema (e.g., license, compatibility, homepage)",
+    )
+
     # Metadata
     source_path: Path | None = Field(
         default=None,

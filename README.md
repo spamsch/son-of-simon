@@ -12,13 +12,13 @@
 
 ## What is this?
 
-Son of Simon is a personal assistant for macOS. If you are considering OpenClaw but want something simpler, Mac-only, and easier to set up, this is that product.
+Son of Simon is an AI assistant for macOS that works directly with your built-in Apple apps — Mail, Calendar, Reminders, Notes, and Safari. Think of it as the macOS automation layer that OpenClaw is missing.
 
-It helps you with everyday tasks using the apps you already have - Mail, Calendar, Reminders, Notes, and Safari. It can also handle websites when needed.
+Where tools like OpenClaw need browser scraping or OAuth flows to access Gmail or Office 365, Son of Simon uses Apple's native app integration. Just add your account in Apple Mail or Calendar and the agent can use it. No tokens, no OAuth, no browser automation needed.
 
-You do not need to code. Most people just download the app, sign in, and start asking.
+Skills are compatible with the [AgentSkills standard](https://agentskills.io) used by OpenClaw, Claude Code, and Cursor — so community skills work across tools.
 
-**Core idea:** For Gmail or Office 365, OpenClaw usually needs a browser or OAuth setup. With Son of Simon you just add the account in Apple Mail/Calendar and the agent can use it.
+You do not need to code. Download the app, sign in, and start asking.
 
 ## What it can do
 
@@ -51,7 +51,7 @@ The setup wizard will guide you through:
   <img src="docs/images/dashboard.png" alt="Dashboard" width="500">
 </p>
 
-## Skills
+## Skills (AgentSkills compatible)
 
 Skills provide guidance for handling specific types of requests. Son of Simon comes with built-in skills for Mail, Calendar, Reminders, Notes, Safari, and Browser Automation. You can enable or disable skills, customize built-in ones, or create your own.
 
@@ -69,7 +69,7 @@ Each skill defines:
   <img src="docs/images/skill-detail.png" alt="Skill Detail" width="500">
 </p>
 
-Custom skills are saved to `~/.macbot/skills/` and require `id`, `name`, and `description` fields.
+Custom skills are saved to `~/.macbot/skills/`. Skills use the **AgentSkills standard** (the same SKILL.md format used by OpenClaw, Claude Code, and Cursor) so you can drop in skills from any compatible tool and they just work.
 
 ## Requirements
 
@@ -85,15 +85,20 @@ Custom skills are saved to `~/.macbot/skills/` and require `id`, `name`, and `de
 - If you enable Telegram, messages go through Telegram
 - Local data is stored in `~/.macbot` (settings, logs, and memory)
 
-## OpenClaw vs Son of Simon (simple)
+## OpenClaw vs Son of Simon
 
-- **OpenClaw** is cross-platform and connects many messaging apps.
-- **Son of Simon** is Mac-first and works directly with built-in Apple apps.
-- **Gmail/Office 365**: With OpenClaw you typically need a browser flow or OAuth setup. With Son of Simon you just add Gmail or Office 365 in Apple Mail/Calendar, and the agent can use them.
-- **OpenClaw** runs a gateway with extra setup. **Son of Simon** is a single app with a guided setup.
-- **OpenClaw** has a broader skills ecosystem. **Son of Simon** keeps tasks built-in and local by default.
+|  | Son of Simon | OpenClaw |
+|---|---|---|
+| **Platform** | macOS only | Cross-platform |
+| **Apple apps** | Native (Mail, Calendar, Reminders, Notes, Safari) | Limited (iMessage via imsg) |
+| **Gmail / Office 365** | Just add account in Apple Mail/Calendar | Browser flow or OAuth setup |
+| **Setup** | Single app with guided wizard | Gateway + configuration |
+| **Skills format** | AgentSkills standard (compatible) | AgentSkills standard (compatible) |
+| **Messaging** | Telegram | WhatsApp, Telegram, Slack, Discord, Signal, iMessage, etc. |
 
-OpenClaw is great if you want a cross-platform hub and do not mind extra setup. If you want a very simple agent that works like OpenClaw, but is Mac-first, fast, and reliable, choose Son of Simon.
+**Use Son of Simon if** you want deep macOS automation that works with your built-in Apple apps out of the box, no OAuth or browser scraping needed. Skills are cross-compatible — you can use OpenClaw community skills in Son of Simon and vice versa.
+
+**Use OpenClaw if** you want a cross-platform hub with many messaging channels and don't mind extra setup.
 
 ## Optional extras
 

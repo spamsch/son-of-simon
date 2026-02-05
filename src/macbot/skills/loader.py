@@ -66,13 +66,20 @@ def load_skill_from_string(
     """
     frontmatter, body = parse_frontmatter(content)
 
-    # Required fields
-    if "id" not in frontmatter:
-        raise ValueError("Skill must have an 'id' field")
-    if "name" not in frontmatter:
-        raise ValueError("Skill must have a 'name' field")
+    # AgentSkills compatibility: accept `name` as identifier when `id` is absent
+    has_id = "id" in frontmatter
+    has_name = "name" in frontmatter
+
+    if not has_id and not has_name:
+        raise ValueError("Skill must have an 'id' or 'name' field")
     if "description" not in frontmatter:
         raise ValueError("Skill must have a 'description' field")
+
+    # Resolve id/name for both formats:
+    #   Son of Simon format: id + name (both present)
+    #   AgentSkills format:  name only (used as both id and display name)
+    skill_id = frontmatter.get("id") or frontmatter["name"]
+    skill_name = frontmatter.get("name") or frontmatter["id"]
 
     # Normalize list fields
     def ensure_list(value: Any) -> list:
@@ -84,19 +91,38 @@ def load_skill_from_string(
             return value
         return [str(value)]
 
+    # AgentSkills compatibility: map `allowed-tools` to tasks
+    # allowed-tools is a space-delimited string like "Bash(git:*) Read"
+    tasks = ensure_list(frontmatter.get("tasks"))
+    if not tasks and "allowed-tools" in frontmatter:
+        allowed = frontmatter["allowed-tools"]
+        if isinstance(allowed, str):
+            tasks = allowed.split()
+        elif isinstance(allowed, list):
+            tasks = allowed
+
+    # Collect extra frontmatter fields into metadata
+    known_fields = {
+        "id", "name", "description", "apps", "tasks", "examples",
+        "safe_defaults", "confirm_before_write", "requires_permissions",
+        "extends", "allowed-tools",
+    }
+    metadata = {k: v for k, v in frontmatter.items() if k not in known_fields}
+
     # Build skill from frontmatter
     return Skill(
-        id=frontmatter["id"],
-        name=frontmatter["name"],
+        id=skill_id,
+        name=skill_name,
         description=frontmatter["description"],
         apps=ensure_list(frontmatter.get("apps")),
-        tasks=ensure_list(frontmatter.get("tasks")),
+        tasks=tasks,
         examples=ensure_list(frontmatter.get("examples")),
         safe_defaults=frontmatter.get("safe_defaults") or {},
         confirm_before_write=ensure_list(frontmatter.get("confirm_before_write")),
         requires_permissions=ensure_list(frontmatter.get("requires_permissions")),
         body=body,
         extends=frontmatter.get("extends"),
+        metadata=metadata,
         source_path=source_path,
         is_builtin=is_builtin,
         enabled=True,  # Default to enabled; registry will apply config
