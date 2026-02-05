@@ -684,7 +684,7 @@ def cmd_version(args: argparse.Namespace) -> None:
 def cmd_start(args: argparse.Namespace) -> None:
     """Start the macbot service (cron + telegram)."""
     from macbot.service import run_service
-    run_service(daemon=args.daemon, verbose=args.verbose)
+    run_service(daemon=args.daemon, verbose=args.verbose, foreground=args.foreground)
 
 
 def cmd_stop(args: argparse.Namespace) -> None:
@@ -1192,31 +1192,54 @@ def cmd_onboard(args: argparse.Namespace) -> None:
 
 def cmd_doctor(args: argparse.Namespace) -> None:
     """Check system prerequisites and configuration."""
+    import json
     import platform
     import shutil
 
-    console.print(f"\n[bold]MacBot Doctor[/bold] v{__version__}\n")
+    # JSON output mode for GUI integration
+    json_mode = getattr(args, 'json', False)
+
+    if not json_mode:
+        console.print(f"\n[bold]MacBot Doctor[/bold] v{__version__}\n")
 
     all_ok = True
+    results: dict = {
+        "version": __version__,
+        "python_version": platform.python_version(),
+        "macos_version": platform.mac_ver()[0] if platform.system() == "Darwin" else None,
+        "platform": platform.system(),
+        "config": {},
+        "permissions": {
+            "accessibility": False,
+            "automation": {}
+        },
+        "all_ok": True,
+        "issues": []
+    }
 
     def check(name: str, ok: bool, message: str, hint: str | None = None) -> bool:
         nonlocal all_ok
-        if ok:
-            console.print(f"  [green]✓[/green] {name}: {message}")
-        else:
-            console.print(f"  [red]✗[/red] {name}: {message}")
-            if hint:
-                console.print(f"    [dim]→ {hint}[/dim]")
+        if not json_mode:
+            if ok:
+                console.print(f"  [green]✓[/green] {name}: {message}")
+            else:
+                console.print(f"  [red]✗[/red] {name}: {message}")
+                if hint:
+                    console.print(f"    [dim]→ {hint}[/dim]")
+        if not ok:
             all_ok = False
+            results["issues"].append(f"{name}: {message}")
         return ok
 
     def warn(name: str, message: str, hint: str | None = None) -> None:
-        console.print(f"  [yellow]![/yellow] {name}: {message}")
-        if hint:
-            console.print(f"    [dim]→ {hint}[/dim]")
+        if not json_mode:
+            console.print(f"  [yellow]![/yellow] {name}: {message}")
+            if hint:
+                console.print(f"    [dim]→ {hint}[/dim]")
 
     # System checks
-    console.print("[bold]System[/bold]")
+    if not json_mode:
+        console.print("[bold]System[/bold]")
 
     # Python version
     py_version = platform.python_version()
@@ -1232,7 +1255,8 @@ def cmd_doctor(args: argparse.Namespace) -> None:
              "macOS automation tasks require macOS")
 
     # Configuration checks
-    console.print("\n[bold]Configuration[/bold]")
+    if not json_mode:
+        console.print("\n[bold]Configuration[/bold]")
 
     # Model
     check("Model", True, settings.model)
@@ -1260,7 +1284,8 @@ def cmd_doctor(args: argparse.Namespace) -> None:
              "Will be created automatically on first use")
 
     # macOS Automation Scripts
-    console.print("\n[bold]macOS Automation[/bold]")
+    if not json_mode:
+        console.print("\n[bold]macOS Automation[/bold]")
 
     # Find scripts directory
     script_locations = [
@@ -1313,7 +1338,8 @@ def cmd_doctor(args: argparse.Namespace) -> None:
               "osascript is required for macOS automation (macOS only)")
 
     # Test AppleScript access to apps
-    console.print("\n[bold]App Access Tests[/bold]")
+    if not json_mode:
+        console.print("\n[bold]App Access Tests[/bold]")
 
     def test_app_access(app_name: str, test_script: str) -> tuple[bool, str]:
         """Test if we can access an app via AppleScript."""
@@ -1345,31 +1371,37 @@ def cmd_doctor(args: argparse.Namespace) -> None:
 
     # Test Notes
     ok, msg = test_app_access("Notes", 'tell application "Notes" to count of notes')
+    results["permissions"]["automation"]["Notes"] = ok
     check("Notes.app", ok, msg,
           "Grant access in System Settings > Privacy & Security > Automation" if not ok else None)
 
     # Test Mail
     ok, msg = test_app_access("Mail", 'tell application "Mail" to count of accounts')
+    results["permissions"]["automation"]["Mail"] = ok
     check("Mail.app", ok, msg,
           "Grant access in System Settings > Privacy & Security > Automation" if not ok else None)
 
     # Test Calendar
     ok, msg = test_app_access("Calendar", 'tell application "Calendar" to count of calendars')
+    results["permissions"]["automation"]["Calendar"] = ok
     check("Calendar.app", ok, msg,
           "Grant access in System Settings > Privacy & Security > Automation" if not ok else None)
 
     # Test Reminders
     ok, msg = test_app_access("Reminders", 'tell application "Reminders" to count of lists')
+    results["permissions"]["automation"]["Reminders"] = ok
     check("Reminders.app", ok, msg,
           "Grant access in System Settings > Privacy & Security > Automation" if not ok else None)
 
     # Test Safari
     ok, msg = test_app_access("Safari", 'tell application "Safari" to count of windows')
+    results["permissions"]["automation"]["Safari"] = ok
     check("Safari.app", ok, msg,
           "Grant access in System Settings > Privacy & Security > Automation" if not ok else None)
 
     # Browser Automation Tools
-    console.print("\n[bold]Browser Automation[/bold]")
+    if not json_mode:
+        console.print("\n[bold]Browser Automation[/bold]")
 
     # Check for cliclick (used for physical mouse clicks)
     cliclick_path = shutil.which("cliclick")
@@ -1424,7 +1456,8 @@ def cmd_doctor(args: argparse.Namespace) -> None:
         warn("Safari JavaScript", f"Could not test: {str(e)[:40]}")
 
     # Tasks
-    console.print("\n[bold]Tasks[/bold]")
+    if not json_mode:
+        console.print("\n[bold]Tasks[/bold]")
 
     registry = create_default_registry()
     task_count = len(registry)
@@ -1436,11 +1469,13 @@ def cmd_doctor(args: argparse.Namespace) -> None:
     )]
     system_tasks = [t for t in registry.list_tasks() if t not in macos_tasks]
 
-    console.print(f"    [dim]System tasks: {len(system_tasks)}[/dim]")
-    console.print(f"    [dim]macOS tasks: {len(macos_tasks)}[/dim]")
+    if not json_mode:
+        console.print(f"    [dim]System tasks: {len(system_tasks)}[/dim]")
+        console.print(f"    [dim]macOS tasks: {len(macos_tasks)}[/dim]")
 
     # Telegram Integration
-    console.print("\n[bold]Telegram Integration[/bold]")
+    if not json_mode:
+        console.print("\n[bold]Telegram Integration[/bold]")
 
     if settings.telegram_bot_token:
         # Token format check
@@ -1484,7 +1519,8 @@ def cmd_doctor(args: argparse.Namespace) -> None:
              "Create bot at t.me/BotFather, then run 'macbot onboard' or set MACBOT_TELEGRAM_BOT_TOKEN")
 
     # Paperless-ngx Integration
-    console.print("\n[bold]Paperless-ngx Integration[/bold]")
+    if not json_mode:
+        console.print("\n[bold]Paperless-ngx Integration[/bold]")
 
     if settings.paperless_url and settings.paperless_api_token:
         check("URL", True, settings.paperless_url)
@@ -1530,13 +1566,22 @@ def cmd_doctor(args: argparse.Namespace) -> None:
         warn("Paperless-ngx", "Not configured",
              "Run 'macbot onboard' or set MACBOT_PAPERLESS_URL and MACBOT_PAPERLESS_API_TOKEN")
 
+    # Update config info in results
+    results["config"]["api_key_configured"] = bool(settings.get_api_key_for_model())
+    results["config"]["telegram_configured"] = bool(settings.telegram_bot_token)
+    results["config"]["model"] = settings.model
+    results["all_ok"] = all_ok
+
     # Summary
-    console.print()
-    if all_ok:
-        console.print("[green]All checks passed![/green] MacBot is ready to use.\n")
+    if json_mode:
+        print(json.dumps(results, indent=2))
     else:
-        console.print("[yellow]Some checks failed.[/yellow] Please fix the issues above.\n")
-        sys.exit(1)
+        console.print()
+        if all_ok:
+            console.print("[green]All checks passed![/green] MacBot is ready to use.\n")
+        else:
+            console.print("[yellow]Some checks failed.[/yellow] Please fix the issues above.\n")
+            sys.exit(1)
 
 
 # Cron commands
@@ -2508,6 +2553,10 @@ Use [bold]macbot <command> --help[/bold] for command details.
         help="Run in background as a daemon"
     )
     start_parser.add_argument(
+        "-f", "--foreground", action="store_true",
+        help="Run in foreground without interactive console (for GUI integration)"
+    )
+    start_parser.add_argument(
         "-v", "--verbose", action="store_true",
         help="Show detailed output"
     )
@@ -2535,6 +2584,10 @@ Use [bold]macbot <command> --help[/bold] for command details.
         help="Check system prerequisites and configuration",
         description="Verify that MacBot is properly configured and all "
                     "prerequisites are met."
+    )
+    doctor_parser.add_argument(
+        "--json", action="store_true",
+        help="Output results as JSON (for programmatic use)"
     )
     doctor_parser.set_defaults(func=cmd_doctor)
 

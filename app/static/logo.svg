@@ -1,0 +1,68 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <!-- Rainbow gradient for outer ring -->
+    <linearGradient id="rainbow" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#ff6b6b"/>
+      <stop offset="25%" stop-color="#feca57"/>
+      <stop offset="50%" stop-color="#48dbfb"/>
+      <stop offset="75%" stop-color="#ff9ff3"/>
+      <stop offset="100%" stop-color="#ff6b6b"/>
+    </linearGradient>
+
+    <!-- Cyan to purple gradient -->
+    <linearGradient id="cyanPurple" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#00d4ff"/>
+      <stop offset="100%" stop-color="#bf00ff"/>
+    </linearGradient>
+
+    <!-- Electric blue gradient -->
+    <linearGradient id="electricBlue" x1="0%" y1="100%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#00f5ff"/>
+      <stop offset="100%" stop-color="#0080ff"/>
+    </linearGradient>
+
+    <!-- Hot pink to orange -->
+    <linearGradient id="hotPink" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#ff0080"/>
+      <stop offset="100%" stop-color="#ff8c00"/>
+    </linearGradient>
+
+    <!-- Vibrant amber/gold for cursor -->
+    <linearGradient id="amberGold" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#ffdd00"/>
+      <stop offset="50%" stop-color="#ff9500"/>
+      <stop offset="100%" stop-color="#ff6600"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Concentric rings - colorful -->
+  <g fill="none">
+    <!-- Outermost - rainbow -->
+    <circle cx="256" cy="256" r="175" stroke="url(#rainbow)" stroke-width="4"/>
+
+    <!-- Ring 2 - cyan to purple -->
+    <circle cx="256" cy="256" r="145" stroke="url(#cyanPurple)" stroke-width="4"/>
+
+    <!-- Ring 3 - electric blue -->
+    <circle cx="256" cy="256" r="115" stroke="url(#electricBlue)" stroke-width="4"/>
+
+    <!-- Ring 4 - hot pink -->
+    <circle cx="256" cy="256" r="85" stroke="url(#hotPink)" stroke-width="4"/>
+
+    <!-- Inner ring - bright cyan -->
+    <circle cx="256" cy="256" r="55" stroke="#00d4ff" stroke-width="5"/>
+  </g>
+
+  <!-- Eye shape - vibrant -->
+  <ellipse cx="256" cy="256" rx="135" ry="75" fill="none" stroke="url(#cyanPurple)" stroke-width="3"/>
+
+  <!-- Core / Pupil background -->
+  <circle cx="256" cy="256" r="38" fill="#1a1a2e"/>
+  <circle cx="256" cy="256" r="32" fill="#0f0f1a"/>
+
+  <!-- Terminal cursor - bright and bold -->
+  <rect x="242" y="235" width="28" height="42" fill="url(#amberGold)" rx="3"/>
+
+  <!-- Cursor highlight -->
+  <rect x="246" y="239" width="8" height="6" fill="#ffffff" opacity="0.5" rx="1"/>
+</svg>
