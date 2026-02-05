@@ -50,6 +50,18 @@ Son of Simon also integrates seamlessly with Telegram. Send a voice message whil
 
 **"Just talk to it"** — Send a voice message via Telegram while you're on the go. Son of Simon transcribes it and gets to work.
 
+## Prerequisites
+
+- **macOS** — Son of Simon uses AppleScript to control native apps
+- **Python 3.10+** — Required for the runtime
+- **LLM API key** — OpenAI, Anthropic, or any provider supported by LiteLLM
+- **Apple apps configured** — Set up Mail, Calendar, and Reminders with your accounts
+- **Automation permissions** — Grant Terminal (or your IDE) permission to control apps in System Settings → Privacy & Security → Automation
+
+**Optional:**
+- **Telegram bot** — For remote access via text or voice ([create one with @BotFather](https://t.me/BotFather))
+- **Paperless-ngx** — For document search and management
+
 ## Quick Start
 
 ```bash
