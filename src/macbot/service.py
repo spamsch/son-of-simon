@@ -403,12 +403,13 @@ class MacbotService:
         return status
 
 
-def run_service(daemon: bool = False, verbose: bool = False) -> None:
+def run_service(daemon: bool = False, verbose: bool = False, foreground: bool = False) -> None:
     """Run the macbot service.
 
     Args:
         daemon: Whether to run as a background daemon
         verbose: Whether to show verbose output
+        foreground: Whether to run in foreground without interactive console (for GUI)
     """
     from rich.console import Console
     console = Console()
@@ -460,23 +461,42 @@ def run_service(daemon: bool = False, verbose: bool = False) -> None:
         # Now in daemon process
         _run_daemon_service()
     else:
-        # Foreground mode with interactive input
-        console.print("[dim]Type queries below, or 'quit' to exit. Ctrl+C also stops.[/dim]")
-
-        # Set up logging for foreground
-        if verbose:
+        # Foreground mode
+        if foreground:
+            # Non-interactive foreground mode (for GUI integration)
+            # Set up simple logging to stdout
             logging.basicConfig(
-                level=logging.INFO,
-                format="%(asctime)s [%(name)s] %(message)s",
+                level=logging.INFO if verbose else logging.WARNING,
+                format="%(asctime)s %(message)s",
                 datefmt="%H:%M:%S",
             )
+            console.print("[green]✓[/green] Service started in foreground mode")
+            console.print("[dim]Press Ctrl+C to stop[/dim]")
 
-        try:
-            asyncio.run(service.start(interactive=True))
-        except KeyboardInterrupt:
-            console.print("\n[dim]Stopping...[/dim]")
-            asyncio.run(service.stop())
-        console.print("[dim]Service stopped.[/dim]")
+            try:
+                asyncio.run(service.start(interactive=False))
+            except KeyboardInterrupt:
+                console.print("\n[dim]Stopping...[/dim]")
+                asyncio.run(service.stop())
+            console.print("[dim]Service stopped.[/dim]")
+        else:
+            # Interactive mode with input prompt
+            console.print("[dim]Type queries below, or 'quit' to exit. Ctrl+C also stops.[/dim]")
+
+            # Set up logging for foreground
+            if verbose:
+                logging.basicConfig(
+                    level=logging.INFO,
+                    format="%(asctime)s [%(name)s] %(message)s",
+                    datefmt="%H:%M:%S",
+                )
+
+            try:
+                asyncio.run(service.start(interactive=True))
+            except KeyboardInterrupt:
+                console.print("\n[dim]Stopping...[/dim]")
+                asyncio.run(service.stop())
+            console.print("[dim]Service stopped.[/dim]")
 
 
 def _daemonize() -> None:
