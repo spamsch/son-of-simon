@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { onMount } from "svelte";
   import { Button } from "$lib/components/ui";
   import { invoke } from "@tauri-apps/api/core";
   import {
@@ -9,6 +10,7 @@
     ArrowRight,
     ArrowLeft,
     Info,
+    CheckCircle,
   } from "lucide-svelte";
   import { onboardingStore, type PermissionsData } from "$lib/stores/onboarding.svelte";
 
@@ -22,6 +24,23 @@
   // Derive permission state from store
   let permissions = $derived(onboardingStore.state.data.permissions);
 
+  let accessibilityGranted = $state(false);
+  let checking = $state(true);
+
+  onMount(async () => {
+    // Check if accessibility is already granted
+    try {
+      const hasAccess = await invoke<boolean>("check_accessibility_permission");
+      accessibilityGranted = hasAccess;
+      if (hasAccess) {
+        await onboardingStore.updatePermissions({ accessibility: true });
+      }
+    } catch (e) {
+      console.error("Failed to check accessibility:", e);
+    }
+    checking = false;
+  });
+
   async function openAccessibilitySettings() {
     await invoke("open_system_preferences", {
       pane: "com.apple.preference.security?Privacy_Accessibility",
@@ -32,6 +51,20 @@
     await invoke("open_system_preferences", {
       pane: "com.apple.preference.security?Privacy_Automation",
     });
+  }
+
+  async function recheckAccessibility() {
+    checking = true;
+    try {
+      const hasAccess = await invoke<boolean>("check_accessibility_permission");
+      accessibilityGranted = hasAccess;
+      if (hasAccess) {
+        await onboardingStore.updatePermissions({ accessibility: true });
+      }
+    } catch (e) {
+      console.error("Failed to check accessibility:", e);
+    }
+    checking = false;
   }
 
   function handleContinue() {
@@ -54,35 +87,56 @@
 
   <!-- Step 1: Accessibility -->
   <div class="mb-6">
-    <div class="flex items-start gap-4 p-5 bg-bg-card rounded-xl border border-border">
-      <div class="w-8 h-8 rounded-full bg-primary text-white flex items-center justify-center font-bold shrink-0">
-        1
+    {#if accessibilityGranted}
+      <!-- Already granted -->
+      <div class="flex items-start gap-4 p-5 bg-success/10 rounded-xl border border-success/30">
+        <div class="w-8 h-8 rounded-full bg-success text-white flex items-center justify-center shrink-0">
+          <Check class="w-5 h-5" />
+        </div>
+        <div class="flex-1">
+          <h3 class="font-semibold text-text mb-2">Accessibility Access Enabled</h3>
+          <p class="text-sm text-text-muted">
+            Great! Son of Simon already has permission to interact with other apps on your Mac.
+          </p>
+        </div>
       </div>
-      <div class="flex-1">
-        <h3 class="font-semibold text-text mb-2">Enable Accessibility Access</h3>
-        <p class="text-sm text-text-muted mb-4">
-          This allows Son of Simon to interact with other apps on your Mac. When System Settings opens:
-        </p>
-        <ol class="text-sm text-text-muted space-y-2 mb-4 ml-4">
-          <li class="flex gap-2">
-            <span class="text-primary font-medium">1.</span>
-            <span>Click the <strong class="text-text">+</strong> button at the bottom of the list</span>
-          </li>
-          <li class="flex gap-2">
-            <span class="text-primary font-medium">2.</span>
-            <span>Find and select <strong class="text-text">Son of Simon</strong> in your Applications folder</span>
-          </li>
-          <li class="flex gap-2">
-            <span class="text-primary font-medium">3.</span>
-            <span>Make sure the toggle next to it is turned <strong class="text-text">on</strong></span>
-          </li>
-        </ol>
-        <Button onclick={openAccessibilitySettings}>
-          Open Accessibility Settings
-          <ExternalLink class="w-4 h-4" />
-        </Button>
+    {:else}
+      <!-- Not granted yet -->
+      <div class="flex items-start gap-4 p-5 bg-bg-card rounded-xl border border-border">
+        <div class="w-8 h-8 rounded-full bg-primary text-white flex items-center justify-center font-bold shrink-0">
+          1
+        </div>
+        <div class="flex-1">
+          <h3 class="font-semibold text-text mb-2">Enable Accessibility Access</h3>
+          <p class="text-sm text-text-muted mb-4">
+            This allows Son of Simon to interact with other apps on your Mac. When System Settings opens:
+          </p>
+          <ol class="text-sm text-text-muted space-y-2 mb-4 ml-4">
+            <li class="flex gap-2">
+              <span class="text-primary font-medium">1.</span>
+              <span>Click the <strong class="text-text">+</strong> button at the bottom of the list</span>
+            </li>
+            <li class="flex gap-2">
+              <span class="text-primary font-medium">2.</span>
+              <span>Find and select <strong class="text-text">Son of Simon</strong> in your Applications folder</span>
+            </li>
+            <li class="flex gap-2">
+              <span class="text-primary font-medium">3.</span>
+              <span>Make sure the toggle next to it is turned <strong class="text-text">on</strong></span>
+            </li>
+          </ol>
+          <div class="flex gap-3">
+            <Button onclick={openAccessibilitySettings}>
+              Open Accessibility Settings
+              <ExternalLink class="w-4 h-4" />
+            </Button>
+            <Button variant="secondary" onclick={recheckAccessibility} loading={checking}>
+              {checking ? "Checking..." : "I've Done This"}
+            </Button>
+          </div>
+        </div>
       </div>
-    </div>
+    {/if}
   </div>
 
   <!-- Step 2: Automation (Optional) -->

@@ -17,7 +17,7 @@
       value:
         onboardingStore.state.data.api_key.provider === "anthropic"
           ? "Claude by Anthropic"
-          : "GPT-4 by OpenAI",
+          : "GPT-5 by OpenAI",
       done: onboardingStore.state.data.api_key.configured,
     },
     {

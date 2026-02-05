@@ -45,12 +45,12 @@
         const trimmed = line.trim();
         return (
           trimmed &&
-          !trimmed.startsWith("TELEGRAM_BOT_TOKEN=") &&
-          !trimmed.startsWith("TELEGRAM_CHAT_ID=")
+          !trimmed.startsWith("MACBOT_TELEGRAM_BOT_TOKEN=") &&
+          !trimmed.startsWith("MACBOT_TELEGRAM_CHAT_ID=")
         );
       });
 
-      lines.push(`TELEGRAM_BOT_TOKEN=${botToken}`);
+      lines.push(`MACBOT_TELEGRAM_BOT_TOKEN=${botToken}`);
 
       await invoke("write_config", { content: lines.join("\n") + "\n" });
 

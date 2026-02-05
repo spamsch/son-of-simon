@@ -20,17 +20,17 @@
 
   const providers = [
     {
+      id: "openai",
+      name: "OpenAI (GPT-5)",
+      description: "The company behind ChatGPT. Widely used and reliable.",
+      url: "https://platform.openai.com/api-keys",
+      recommended: true,
+    },
+    {
       id: "anthropic",
       name: "Anthropic (Claude)",
       description: "Powers ChatGPT's competitor Claude. Known for being helpful and safe.",
       url: "https://console.anthropic.com/settings/keys",
-      recommended: true,
-    },
-    {
-      id: "openai",
-      name: "OpenAI (GPT-4)",
-      description: "The company behind ChatGPT. Widely used and reliable.",
-      url: "https://platform.openai.com/api-keys",
       recommended: false,
     },
   ];
@@ -53,12 +53,15 @@
 
     try {
       // Save API key to config file
-      const envVar =
+      // Use MACBOT_ prefix for pydantic settings, plus standard env var for litellm
+      const envVarPrefixed =
+        provider === "anthropic" ? "MACBOT_ANTHROPIC_API_KEY" : "MACBOT_OPENAI_API_KEY";
+      const envVarStandard =
         provider === "anthropic" ? "ANTHROPIC_API_KEY" : "OPENAI_API_KEY";
       const model =
         provider === "anthropic"
           ? "anthropic/claude-sonnet-4-20250514"
-          : "openai/gpt-4o";
+          : "openai/gpt-5.2";
 
       // Read existing config
       let config = await invoke<string>("read_config");
@@ -68,14 +71,19 @@
         const trimmed = line.trim();
         return (
           trimmed &&
+          !trimmed.startsWith("MACBOT_ANTHROPIC_API_KEY=") &&
+          !trimmed.startsWith("MACBOT_OPENAI_API_KEY=") &&
           !trimmed.startsWith("ANTHROPIC_API_KEY=") &&
           !trimmed.startsWith("OPENAI_API_KEY=") &&
+          !trimmed.startsWith("MACBOT_MODEL=") &&
           !trimmed.startsWith("MODEL=")
         );
       });
 
-      lines.push(`${envVar}=${apiKey}`);
-      lines.push(`MODEL=${model}`);
+      // Add both prefixed (for pydantic) and standard (for litellm) env vars
+      lines.push(`${envVarPrefixed}=${apiKey}`);
+      lines.push(`${envVarStandard}=${apiKey}`);
+      lines.push(`MACBOT_MODEL=${model}`);
 
       await invoke("write_config", { content: lines.join("\n") + "\n" });
 
@@ -216,7 +224,7 @@
       </div>
       <div>
         <p class="font-semibold text-success">API key saved successfully!</p>
-        <p class="text-sm text-text-muted">Son of Simon is now connected to {provider === "anthropic" ? "Claude" : "GPT-4"}.</p>
+        <p class="text-sm text-text-muted">Son of Simon is now connected to {provider === "anthropic" ? "Claude" : "GPT-5"}.</p>
       </div>
     </div>
   {/if}

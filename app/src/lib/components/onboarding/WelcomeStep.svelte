@@ -28,11 +28,7 @@
 </script>
 
 <div class="flex flex-col items-center text-center px-10 py-8">
-  <div
-    class="w-20 h-20 bg-primary/10 rounded-2xl flex items-center justify-center mb-6"
-  >
-    <Sparkles class="w-10 h-10 text-primary" />
-  </div>
+  <img src="/logo.svg" alt="Son of Simon" class="w-24 h-24 mb-6" />
 
   <h1 class="text-3xl font-bold text-text mb-3">Welcome to Son of Simon</h1>
 

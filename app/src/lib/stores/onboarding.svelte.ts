@@ -60,7 +60,7 @@ function createDefaultState(): OnboardingState {
         },
       },
       api_key: {
-        provider: "anthropic",
+        provider: "openai",
         configured: false,
         verified: false,
       },
