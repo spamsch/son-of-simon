@@ -12,10 +12,14 @@ Output:
 """
 
 import sys
+import os
 from pathlib import Path
 
 # Get the project root
 project_root = Path(SPECPATH)
+
+# Get codesign identity from environment variable (for CI) or use None for local dev
+codesign_identity = os.environ.get('APPLE_SIGNING_IDENTITY', None)
 
 # Dynamically find package locations (works in venv and system Python)
 import litellm
@@ -156,6 +160,6 @@ exe = EXE(
     disable_windowed_traceback=False,
     argv_emulation=False,
     target_arch=None,  # Will build for current architecture
-    codesign_identity=None,
+    codesign_identity=codesign_identity,
     entitlements_file=None,
 )

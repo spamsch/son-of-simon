@@ -67,19 +67,13 @@ jobs:
           pip install pyinstaller
 
       - name: Build Python sidecar
+        env:
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
         run: |
           pyinstaller --clean --noconfirm son.spec
           mkdir -p app/src-tauri/binaries
           cp dist/son app/src-tauri/binaries/son-aarch64-apple-darwin
           chmod +x app/src-tauri/binaries/son-aarch64-apple-darwin
-
-      - name: Sign Python sidecar
-        env:
-          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
-        run: |
-          codesign --force --timestamp --sign "$APPLE_SIGNING_IDENTITY" \
-            --options runtime \
-            app/src-tauri/binaries/son-aarch64-apple-darwin
           # Verify signature
           codesign --verify --verbose app/src-tauri/binaries/son-aarch64-apple-darwin
 
