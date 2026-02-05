@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::sync::Mutex;
+use tauri::RunEvent;
 
 // State for managing the running service
 pub struct ServiceState {
@@ -92,6 +93,28 @@ fn get_onboarding_path() -> Result<PathBuf, String> {
 
 fn get_env_path() -> Result<PathBuf, String> {
     get_macbot_dir().map(|p| p.join(".env"))
+}
+
+fn get_pid_path() -> Result<PathBuf, String> {
+    get_macbot_dir().map(|p| p.join("service.pid"))
+}
+
+/// Stop the service if running by reading PID file and killing the process
+fn stop_service_if_running() {
+    if let Ok(pid_path) = get_pid_path() {
+        if pid_path.exists() {
+            if let Ok(pid_str) = std::fs::read_to_string(&pid_path) {
+                if let Ok(pid) = pid_str.trim().parse::<i32>() {
+                    // Try to kill the process
+                    let _ = std::process::Command::new("kill")
+                        .arg(pid.to_string())
+                        .output();
+                    // Remove the PID file
+                    let _ = std::fs::remove_file(&pid_path);
+                }
+            }
+        }
+    }
 }
 
 // Read onboarding state from disk
@@ -192,6 +215,12 @@ pub fn run() {
             get_service_state,
             set_service_running,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|_app_handle, event| {
+            if let RunEvent::Exit = event {
+                // Stop the service when the app exits
+                stop_service_if_running();
+            }
+        });
 }
