@@ -54,6 +54,17 @@
   <div class="min-h-screen flex flex-col items-center justify-center p-6">
     <Card padding="none">
       <div class="w-[680px] max-w-full">
+        <!-- Header with logo -->
+        <div class="flex items-center justify-between px-6 py-4 border-b border-border">
+          <div class="flex items-center gap-3">
+            <img src="/logo.svg" alt="Son of Simon" class="w-8 h-8" />
+            <span class="font-semibold text-text">Son of Simon</span>
+          </div>
+          {#if currentStep !== "welcome" && currentStep !== "complete"}
+            <span class="text-sm text-text-muted">Setup Assistant</span>
+          {/if}
+        </div>
+
         <!-- Step Indicator (not shown on welcome) -->
         {#if currentStep !== "welcome"}
           <div class="px-6 pt-4">
