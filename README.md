@@ -10,6 +10,16 @@
 
 ---
 
+## Why Son of Simon?
+
+Computer-use agents are powerful but often require you to code every interaction or rely on fragile screen scraping. Son of Simon takes a different approach: **use what macOS already gives you**.
+
+Every Apple app—Mail, Calendar, Reminders, Notes, Safari—is scriptable via AppleScript. This means the agent can read your emails, create events, and manage reminders through official APIs, not pixel hunting. It's fast, reliable, and works even when windows are hidden.
+
+The tradeoff? Your accounts live in Apple's apps. But that's actually a feature: one place for credentials, native sync across devices, and no need to hand API tokens to yet another service.
+
+For everything else—booking restaurants, checking prices, filling forms—browser automation handles the web. A hybrid approach: native where it matters, flexible where it doesn't.
+
 ## Features
 
 - **macOS Automation** - Control Mail, Calendar, Reminders, Notes, and Safari via natural language
