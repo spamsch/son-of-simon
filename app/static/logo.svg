@@ -1,11 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
   <defs>
-    <!-- Vibrant gradient background -->
-    <radialGradient id="bgGrad" cx="50%" cy="50%" r="60%">
-      <stop offset="0%" stop-color="#1a1a2e"/>
-      <stop offset="100%" stop-color="#0f0f1a"/>
-    </radialGradient>
-
     <!-- Rainbow gradient for outer ring -->
     <linearGradient id="rainbow" x1="0%" y1="0%" x2="100%" y2="100%">
       <stop offset="0%" stop-color="#ff6b6b"/>
@@ -39,61 +33,10 @@
       <stop offset="50%" stop-color="#ff9500"/>
       <stop offset="100%" stop-color="#ff6600"/>
     </linearGradient>
-
-    <!-- Glow filters -->
-    <filter id="glowStrong" x="-50%" y="-50%" width="200%" height="200%">
-      <feGaussianBlur stdDeviation="6" result="coloredBlur"/>
-      <feMerge>
-        <feMergeNode in="coloredBlur"/>
-        <feMergeNode in="coloredBlur"/>
-        <feMergeNode in="SourceGraphic"/>
-      </feMerge>
-    </filter>
-
-    <filter id="glowSoft" x="-50%" y="-50%" width="200%" height="200%">
-      <feGaussianBlur stdDeviation="3" result="coloredBlur"/>
-      <feMerge>
-        <feMergeNode in="coloredBlur"/>
-        <feMergeNode in="SourceGraphic"/>
-      </feMerge>
-    </filter>
-
-    <filter id="cursorGlow" x="-100%" y="-100%" width="300%" height="300%">
-      <feGaussianBlur stdDeviation="10" result="coloredBlur"/>
-      <feMerge>
-        <feMergeNode in="coloredBlur"/>
-        <feMergeNode in="coloredBlur"/>
-        <feMergeNode in="coloredBlur"/>
-        <feMergeNode in="SourceGraphic"/>
-      </feMerge>
-    </filter>
   </defs>
 
-  <!-- Background -->
-  <rect width="512" height="512" fill="url(#bgGrad)"/>
-
-  <!-- Outer decorative dots -->
-  <g filter="url(#glowSoft)">
-    <circle cx="256" cy="50" r="6" fill="#ff6b6b"/>
-    <circle cx="256" cy="462" r="6" fill="#48dbfb"/>
-    <circle cx="50" cy="256" r="6" fill="#feca57"/>
-    <circle cx="462" cy="256" r="6" fill="#ff9ff3"/>
-    <circle cx="110" cy="110" r="4" fill="#00f5ff"/>
-    <circle cx="402" cy="110" r="4" fill="#ff0080"/>
-    <circle cx="110" cy="402" r="4" fill="#bf00ff"/>
-    <circle cx="402" cy="402" r="4" fill="#ff8c00"/>
-  </g>
-
-  <!-- Data rays -->
-  <g stroke-width="2" fill="none" filter="url(#glowSoft)">
-    <line x1="256" y1="65" x2="256" y2="115" stroke="#ff6b6b"/>
-    <line x1="256" y1="397" x2="256" y2="447" stroke="#48dbfb"/>
-    <line x1="65" y1="256" x2="115" y2="256" stroke="#feca57"/>
-    <line x1="397" y1="256" x2="447" y2="256" stroke="#ff9ff3"/>
-  </g>
-
   <!-- Concentric rings - colorful -->
-  <g fill="none" filter="url(#glowStrong)">
+  <g fill="none">
     <!-- Outermost - rainbow -->
     <circle cx="256" cy="256" r="175" stroke="url(#rainbow)" stroke-width="4"/>
 
@@ -107,24 +50,19 @@
     <circle cx="256" cy="256" r="85" stroke="url(#hotPink)" stroke-width="4"/>
 
     <!-- Inner ring - bright cyan -->
-    <circle cx="256" cy="256" r="55" stroke="#00ffff" stroke-width="5"/>
+    <circle cx="256" cy="256" r="55" stroke="#00d4ff" stroke-width="5"/>
   </g>
 
   <!-- Eye shape - vibrant -->
-  <ellipse cx="256" cy="256" rx="135" ry="75" fill="none" stroke="url(#cyanPurple)" stroke-width="3" filter="url(#glowSoft)"/>
+  <ellipse cx="256" cy="256" rx="135" ry="75" fill="none" stroke="url(#cyanPurple)" stroke-width="3"/>
 
   <!-- Core / Pupil background -->
-  <circle cx="256" cy="256" r="38" fill="#0a0a15"/>
-  <circle cx="256" cy="256" r="32" fill="#050510"/>
+  <circle cx="256" cy="256" r="38" fill="#1a1a2e"/>
+  <circle cx="256" cy="256" r="32" fill="#0f0f1a"/>
 
   <!-- Terminal cursor - bright and bold -->
-  <g filter="url(#cursorGlow)">
-    <rect x="242" y="235" width="28" height="42" fill="url(#amberGold)" rx="3"/>
-  </g>
+  <rect x="242" y="235" width="28" height="42" fill="url(#amberGold)" rx="3"/>
 
   <!-- Cursor highlight -->
   <rect x="246" y="239" width="8" height="6" fill="#ffffff" opacity="0.5" rx="1"/>
-
-  <!-- Inner reflection -->
-  <circle cx="275" cy="240" r="8" fill="#ffffff" opacity="0.1"/>
 </svg>
