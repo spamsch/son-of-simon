@@ -38,6 +38,10 @@ class Settings(BaseSettings):
         default="",
         description="OpenAI API key (for openai/* models)",
     )
+    openrouter_api_key: str = Field(
+        default="",
+        description="OpenRouter API key (for openrouter/* models)",
+    )
 
     # Agent settings
     max_iterations: int = Field(
@@ -200,6 +204,7 @@ Before starting a task, check `get_agent_memory` to see recent context and avoid
         key_map = {
             "anthropic": self.anthropic_api_key,
             "openai": self.openai_api_key,
+            "openrouter": self.openrouter_api_key,
         }
         return key_map.get(provider)
 

@@ -11,13 +11,17 @@
 
   let launching = $state(false);
 
+  function providerLabel(): string {
+    const p = onboardingStore.state.data.api_key.provider;
+    if (p === "anthropic") return "Claude by Anthropic";
+    if (p === "openai") return "GPT-5 by OpenAI";
+    return "OpenRouter";
+  }
+
   const summary = $derived([
     {
       label: "AI Provider",
-      value:
-        onboardingStore.state.data.api_key.provider === "anthropic"
-          ? "Claude by Anthropic"
-          : "GPT-5 by OpenAI",
+      value: providerLabel(),
       done: onboardingStore.state.data.api_key.configured,
     },
     {

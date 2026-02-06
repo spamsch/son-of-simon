@@ -2,7 +2,7 @@
   import { Button, Input } from "$lib/components/ui";
   import { invoke } from "@tauri-apps/api/core";
   import { open } from "@tauri-apps/plugin-shell";
-  import { Key, Check, ExternalLink, AlertCircle, ArrowRight, ArrowLeft, Info, CreditCard } from "lucide-svelte";
+  import { Key, Check, ExternalLink, AlertCircle, ArrowRight, ArrowLeft, Info } from "lucide-svelte";
   import { onboardingStore } from "$lib/stores/onboarding.svelte";
 
   interface Props {
@@ -14,32 +14,106 @@
 
   let provider = $state(onboardingStore.state.data.api_key.provider);
   let apiKey = $state("");
+  let selectedModel = $state("");
   let verifying = $state(false);
   let verified = $state(onboardingStore.state.data.api_key.verified);
   let error = $state<string | null>(null);
 
-  const providers = [
-    {
-      id: "openai",
-      name: "OpenAI (GPT-5)",
-      description: "The company behind ChatGPT. Widely used and reliable.",
-      url: "https://platform.openai.com/api-keys",
-      recommended: true,
-    },
+  interface ModelOption {
+    id: string;
+    name: string;
+    tag?: string;
+  }
+
+  interface ProviderConfig {
+    id: string;
+    name: string;
+    description: string;
+    url: string;
+    keyPlaceholder: string;
+    keyPrefix: string;
+    envPrefixed: string;
+    envStandard: string;
+    models: ModelOption[];
+  }
+
+  const providers: ProviderConfig[] = [
     {
       id: "anthropic",
       name: "Anthropic (Claude)",
-      description: "Powers ChatGPT's competitor Claude. Known for being helpful and safe.",
+      description: "Claude models. Excellent tool use and instruction following.",
       url: "https://console.anthropic.com/settings/keys",
-      recommended: false,
+      keyPlaceholder: "sk-ant-api03-...",
+      keyPrefix: "sk-ant-",
+      envPrefixed: "MACBOT_ANTHROPIC_API_KEY",
+      envStandard: "ANTHROPIC_API_KEY",
+      models: [
+        { id: "anthropic/claude-sonnet-4-5", name: "Claude Sonnet 4.5", tag: "Recommended" },
+        { id: "anthropic/claude-opus-4-6", name: "Claude Opus 4.6", tag: "Most capable" },
+        { id: "anthropic/claude-haiku-4-5", name: "Claude Haiku 4.5", tag: "Fast & cheap" },
+      ],
+    },
+    {
+      id: "openai",
+      name: "OpenAI (GPT-5)",
+      description: "GPT-5 series and reasoning models from the makers of ChatGPT.",
+      url: "https://platform.openai.com/api-keys",
+      keyPlaceholder: "sk-proj-...",
+      keyPrefix: "sk-",
+      envPrefixed: "MACBOT_OPENAI_API_KEY",
+      envStandard: "OPENAI_API_KEY",
+      models: [
+        { id: "openai/gpt-5.2", name: "GPT-5.2", tag: "Recommended" },
+        { id: "openai/gpt-5.2-pro", name: "GPT-5.2 Pro", tag: "Most capable" },
+        { id: "openai/gpt-5.1", name: "GPT-5.1" },
+        { id: "openai/gpt-5-mini", name: "GPT-5 Mini", tag: "Fast & cheap" },
+        { id: "openai/o4-mini", name: "o4-mini", tag: "Reasoning" },
+      ],
+    },
+    {
+      id: "openrouter",
+      name: "OpenRouter",
+      description: "Access many models (DeepSeek, Gemini, GLM, Llama) with one key.",
+      url: "https://openrouter.ai/keys",
+      keyPlaceholder: "sk-or-v1-...",
+      keyPrefix: "sk-or-",
+      envPrefixed: "MACBOT_OPENROUTER_API_KEY",
+      envStandard: "OPENROUTER_API_KEY",
+      models: [
+        { id: "openrouter/deepseek/deepseek-v3.2-20251201", name: "DeepSeek V3.2", tag: "Recommended" },
+        { id: "openrouter/google/gemini-2.5-flash", name: "Gemini 2.5 Flash", tag: "Fast & cheap" },
+        { id: "openrouter/google/gemini-2.5-pro", name: "Gemini 2.5 Pro" },
+        { id: "openrouter/z-ai/glm-4.7-20251222", name: "GLM 4.7" },
+        { id: "openrouter/meta-llama/llama-4-maverick-17b-128e-instruct", name: "Llama 4 Maverick" },
+        { id: "openrouter/qwen/qwen3-235b-a22b-04-28", name: "Qwen 3 235B" },
+        { id: "openrouter/x-ai/grok-4.1-fast", name: "Grok 4.1 Fast" },
+      ],
     },
   ];
 
-  async function openProviderSite() {
+  const currentProvider = $derived(providers.find((p) => p.id === provider)!);
+
+  // Set default model when provider changes
+  $effect(() => {
     const p = providers.find((p) => p.id === provider);
-    if (p) {
-      await open(p.url);
+    if (p && (!selectedModel || !p.models.some((m) => m.id === selectedModel))) {
+      selectedModel = p.models[0].id;
     }
+  });
+
+  function providerDisplayName(): string {
+    if (provider === "anthropic") return "Anthropic";
+    if (provider === "openai") return "OpenAI";
+    return "OpenRouter";
+  }
+
+  function modelDisplayName(): string {
+    const m = currentProvider.models.find((m) => m.id === selectedModel);
+    return m?.name ?? selectedModel;
+  }
+
+  async function openProviderSite() {
+    await open(currentProvider.url);
   }
 
   async function verifyKey() {
@@ -52,49 +126,39 @@
     error = null;
 
     try {
-      // Save API key to config file
-      // Use MACBOT_ prefix for pydantic settings, plus standard env var for litellm
-      const envVarPrefixed =
-        provider === "anthropic" ? "MACBOT_ANTHROPIC_API_KEY" : "MACBOT_OPENAI_API_KEY";
-      const envVarStandard =
-        provider === "anthropic" ? "ANTHROPIC_API_KEY" : "OPENAI_API_KEY";
-      const model =
-        provider === "anthropic"
-          ? "anthropic/claude-sonnet-4-20250514"
-          : "openai/gpt-5.2";
+      // Validate key format
+      const keyRegex = new RegExp(`^${currentProvider.keyPrefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`);
+      if (!keyRegex.test(apiKey)) {
+        error = `This doesn't look like a valid ${providerDisplayName()} API key. It should start with "${currentProvider.keyPrefix}"`;
+        verifying = false;
+        return;
+      }
 
       // Read existing config
       let config = await invoke<string>("read_config");
 
-      // Update or add the API key and model
+      // Remove all old API key and model lines
       const lines = config.split("\n").filter((line) => {
         const trimmed = line.trim();
         return (
           trimmed &&
           !trimmed.startsWith("MACBOT_ANTHROPIC_API_KEY=") &&
           !trimmed.startsWith("MACBOT_OPENAI_API_KEY=") &&
+          !trimmed.startsWith("MACBOT_OPENROUTER_API_KEY=") &&
           !trimmed.startsWith("ANTHROPIC_API_KEY=") &&
           !trimmed.startsWith("OPENAI_API_KEY=") &&
+          !trimmed.startsWith("OPENROUTER_API_KEY=") &&
           !trimmed.startsWith("MACBOT_MODEL=") &&
           !trimmed.startsWith("MODEL=")
         );
       });
 
       // Add both prefixed (for pydantic) and standard (for litellm) env vars
-      lines.push(`${envVarPrefixed}=${apiKey}`);
-      lines.push(`${envVarStandard}=${apiKey}`);
-      lines.push(`MACBOT_MODEL=${model}`);
+      lines.push(`${currentProvider.envPrefixed}=${apiKey}`);
+      lines.push(`${currentProvider.envStandard}=${apiKey}`);
+      lines.push(`MACBOT_MODEL=${selectedModel}`);
 
       await invoke("write_config", { content: lines.join("\n") + "\n" });
-
-      // Validate the key format
-      const keyPattern =
-        provider === "anthropic" ? /^sk-ant-/ : /^sk-[a-zA-Z0-9]/;
-
-      if (!keyPattern.test(apiKey)) {
-        error = `This doesn't look like a valid ${provider === "anthropic" ? "Anthropic" : "OpenAI"} API key. It should start with "${provider === "anthropic" ? "sk-ant-" : "sk-"}"`;
-        return;
-      }
 
       verified = true;
       await onboardingStore.updateApiKey({
@@ -126,7 +190,6 @@
 
   <p class="text-text-muted mb-6">
     Son of Simon uses AI to understand what you want to do. You'll need an API key from an AI provider.
-    This is like a password that lets the app talk to the AI service.
   </p>
 
   <!-- What is an API key? -->
@@ -135,7 +198,7 @@
     <div>
       <p class="text-sm text-text-muted">
         <strong class="text-text">What's an API key?</strong> It's a unique code that identifies you to
-        the AI service. You'll get one for free when you create an account with Anthropic or OpenAI.
+        the AI service. Create an account with any provider below to get one.
         Usage is pay-as-you-go and typically costs just a few cents per day.
       </p>
     </div>
@@ -161,16 +224,30 @@
         >
           <div class="flex items-center justify-between mb-1">
             <span class="font-semibold text-text">{p.name}</span>
-            {#if p.recommended}
-              <span class="text-xs bg-primary/10 text-primary px-2 py-1 rounded-full font-medium">
-                Recommended
-              </span>
-            {/if}
           </div>
           <p class="text-sm text-text-muted">{p.description}</p>
         </button>
       {/each}
     </div>
+  </div>
+
+  <!-- Model Selection -->
+  <div class="mb-6">
+    <label for="model-select" class="text-sm font-medium text-text mb-2 block">Model:</label>
+    <select
+      id="model-select"
+      bind:value={selectedModel}
+      disabled={verified}
+      class="w-full p-3 bg-bg-input border border-border rounded-xl text-text text-sm
+             focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary
+             disabled:opacity-50 disabled:cursor-not-allowed"
+    >
+      {#each currentProvider.models as m}
+        <option value={m.id}>
+          {m.name}{m.tag ? ` — ${m.tag}` : ""}
+        </option>
+      {/each}
+    </select>
   </div>
 
   {#if !verified}
@@ -180,7 +257,7 @@
       <ol class="text-sm text-text-muted space-y-2 mb-4">
         <li class="flex gap-2">
           <span class="text-primary font-medium">1.</span>
-          <span>Click the button below to open {provider === "anthropic" ? "Anthropic" : "OpenAI"}'s website</span>
+          <span>Click the button below to open {providerDisplayName()}'s website</span>
         </li>
         <li class="flex gap-2">
           <span class="text-primary font-medium">2.</span>
@@ -188,7 +265,7 @@
         </li>
         <li class="flex gap-2">
           <span class="text-primary font-medium">3.</span>
-          <span>Click "Create Key" and copy the key that appears</span>
+          <span>Create a new API key and copy it</span>
         </li>
         <li class="flex gap-2">
           <span class="text-primary font-medium">4.</span>
@@ -196,7 +273,7 @@
         </li>
       </ol>
       <Button variant="secondary" onclick={openProviderSite}>
-        Open {provider === "anthropic" ? "Anthropic" : "OpenAI"} Website
+        Open {providerDisplayName()} Website
         <ExternalLink class="w-4 h-4" />
       </Button>
     </div>
@@ -206,7 +283,7 @@
       <Input
         type="password"
         label="Paste your API key here"
-        placeholder={provider === "anthropic" ? "sk-ant-api03-..." : "sk-proj-..."}
+        placeholder={currentProvider.keyPlaceholder}
         bind:value={apiKey}
         error={error ?? undefined}
       />
@@ -224,7 +301,7 @@
       </div>
       <div>
         <p class="font-semibold text-success">API key saved successfully!</p>
-        <p class="text-sm text-text-muted">Son of Simon is now connected to {provider === "anthropic" ? "Claude" : "GPT-5"}.</p>
+        <p class="text-sm text-text-muted">Son of Simon is now connected to {modelDisplayName()} via {providerDisplayName()}.</p>
       </div>
     </div>
   {/if}
