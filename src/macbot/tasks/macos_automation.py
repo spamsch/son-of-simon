@@ -714,6 +714,7 @@ class ListRemindersTask(Task):
         high_priority: bool = False,
         overdue: bool = False,
         completed: bool = False,
+        include_completed: bool = False,
         limit: int = 50
     ) -> dict[str, Any]:
         """List reminders.
@@ -724,6 +725,7 @@ class ListRemindersTask(Task):
             high_priority: Only show high priority reminders.
             overdue: Only show overdue reminders.
             completed: Show completed instead of incomplete.
+            include_completed: Alias for completed.
             limit: Maximum number of results.
 
         Returns:
@@ -738,7 +740,7 @@ class ListRemindersTask(Task):
             args.append("--high-priority")
         if overdue:
             args.append("--overdue")
-        if completed:
+        if completed or include_completed:
             args.append("--completed")
 
         return await run_script("reminders/list-reminders.sh", args)
