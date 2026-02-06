@@ -4,6 +4,7 @@ name: ClawHub
 description: Search, install, and manage community skills from the ClawHub registry.
 tasks:
   - run_shell_command
+  - enrich_skill
 examples:
   - "Search ClawHub for a Slack skill"
   - "Install the weather skill from ClawHub"
@@ -21,11 +22,7 @@ enriched: true
 
 ## CRITICAL: Always enrich after installing
 
-After EVERY `clawhub install`, you MUST immediately run:
-```
-son skills enrich <skill-id>
-```
-This is not optional. Without enrichment, the skill is bare metadata and useless to you. The install is not complete until enrichment finishes. Do NOT tell the user the skill is installed until you have enriched it.
+After EVERY `clawhub install`, you MUST immediately call the `enrich_skill` tool with the skill ID. This is not optional. Without enrichment, the skill is bare metadata and useless to you. The install is not complete until enrichment finishes. Do NOT tell the user the skill is installed until you have enriched it.
 
 ## Behavior Notes
 
@@ -52,6 +49,6 @@ npm install -g clawhub
 When the user asks to search for or install a skill, just do it. Don't ask for confirmation before searching. Only confirm before installing (since it writes to disk).
 
 ### Full Install Workflow
-1. `clawhub install --dir ~/.macbot/skills <skill-name>`
-2. `son skills enrich <skill-id>` (MANDATORY — do this immediately)
+1. `run_shell_command`: `clawhub install --dir ~/.macbot/skills <skill-name>`
+2. `enrich_skill(skill_id="<skill-id>")` (MANDATORY — do this immediately)
 3. Then tell the user the skill is ready

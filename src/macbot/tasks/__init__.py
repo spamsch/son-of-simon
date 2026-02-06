@@ -128,4 +128,8 @@ def create_default_registry() -> TaskRegistry:
     from macbot.tasks.time_tracking import register_time_tracking_tasks
     register_time_tracking_tasks(registry)
 
+    # Register skill enrichment task
+    from macbot.tasks.skill_enrich import register_skill_enrich_tasks
+    register_skill_enrich_tasks(registry)
+
     return registry
