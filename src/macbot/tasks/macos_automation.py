@@ -8,6 +8,7 @@ These tasks wrap the shell scripts in /workspace/macos-automation/.
 
 import asyncio
 import os
+import shlex
 import sys
 from typing import Any
 
@@ -41,7 +42,7 @@ async def run_script(script_path: str, args: list[str] | None = None, timeout: i
 
     full_path = os.path.join(SCRIPTS_BASE, script_path)
     cmd_parts = [full_path] + (args or [])
-    cmd = " ".join(f'"{p}"' if " " in p else p for p in cmd_parts)
+    cmd = " ".join(shlex.quote(p) for p in cmd_parts)
 
     logger.debug(f"Running script: {cmd}")
     logger.debug(f"Script path exists: {os.path.exists(full_path)}")

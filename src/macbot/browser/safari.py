@@ -4,6 +4,8 @@ import asyncio
 import json
 import logging
 import os
+import shlex
+import sys
 from typing import Any
 
 from macbot.browser.types import BrowserResult, Snapshot
@@ -11,10 +13,13 @@ from macbot.browser.types import BrowserResult, Snapshot
 logger = logging.getLogger(__name__)
 
 # Path to browser automation scripts
-_PACKAGE_DIR = os.path.dirname(
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-)
-SCRIPTS_BASE = os.path.join(_PACKAGE_DIR, "macos-automation", "browser")
+if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
+    SCRIPTS_BASE = os.path.join(sys._MEIPASS, "macos-automation", "browser")
+else:
+    _PACKAGE_DIR = os.path.dirname(
+        os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    )
+    SCRIPTS_BASE = os.path.join(_PACKAGE_DIR, "macos-automation", "browser")
 
 
 class BrowserError(Exception):
@@ -45,7 +50,7 @@ async def _run_script(
         raise BrowserError(f"Script not found: {script_path}")
 
     cmd_parts = [script_path] + (args or [])
-    cmd = " ".join(f'"{p}"' if " " in p else p for p in cmd_parts)
+    cmd = " ".join(shlex.quote(p) for p in cmd_parts)
 
     logger.debug(f"Running browser script: {cmd}")
 

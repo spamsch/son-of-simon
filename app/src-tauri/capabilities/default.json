@@ -45,23 +45,23 @@
     "fs:allow-home-write-recursive",
     {
       "identifier": "fs:allow-mkdir",
-      "allow": [{ "path": "$HOME/.macbot/**" }]
+      "allow": [{ "path": "$HOME/.macbot" }, { "path": "$HOME/.macbot/**" }]
     },
     {
       "identifier": "fs:allow-write-text-file",
-      "allow": [{ "path": "$HOME/.macbot/**" }]
+      "allow": [{ "path": "$HOME/.macbot/*" }, { "path": "$HOME/.macbot/**" }]
     },
     {
       "identifier": "fs:allow-read-text-file",
-      "allow": [{ "path": "$HOME/.macbot/**" }]
+      "allow": [{ "path": "$HOME/.macbot/*" }, { "path": "$HOME/.macbot/**" }]
     },
     {
       "identifier": "fs:allow-exists",
-      "allow": [{ "path": "$HOME/.macbot/**" }]
+      "allow": [{ "path": "$HOME/.macbot" }, { "path": "$HOME/.macbot/*" }, { "path": "$HOME/.macbot/**" }]
     },
     {
       "identifier": "fs:allow-read-dir",
-      "allow": [{ "path": "$HOME/.macbot/**" }]
+      "allow": [{ "path": "$HOME/.macbot" }, { "path": "$HOME/.macbot/**" }]
     }
   ]
 }
