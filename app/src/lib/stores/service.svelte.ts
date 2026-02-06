@@ -27,7 +27,7 @@ class ServiceStore {
       // Show startup message before running the command
       const script = `
         tell application "Terminal"
-          set newWindow to do script "clear && echo 'Starting Son of Simon... takes a minute' && \\"${sonPath}\\" ${args}"
+          set newWindow to do script "clear && echo 'Preparing environment... takes a minute' && \\"${sonPath}\\" ${args}"
           activate
           set bounds of front window to {100, 100, 1100, 700}
         end tell
@@ -79,6 +79,34 @@ class ServiceStore {
       await command.execute();
     } catch (e) {
       console.error("Failed to show terminal:", e);
+    }
+  }
+
+  async runDoctor() {
+    if (this._running) return;
+
+    try {
+      const resourcePath = await resourceDir();
+      const contentsPath = await dirname(resourcePath);
+      const sonPath = await join(contentsPath, "MacOS", "son");
+
+      const script = `
+        tell application "Terminal"
+          set newWindow to do script "clear && \\"${sonPath}\\" doctor; echo ''; echo 'Press any key to close...'; read -n 1"
+          activate
+          set bounds of front window to {100, 100, 1100, 700}
+        end tell
+      `;
+
+      const command = Command.create("exec-sh", [
+        "-c",
+        `osascript -e '${script.replace(/'/g, "'\"'\"'")}'`,
+      ]);
+
+      await command.execute();
+    } catch (e) {
+      console.error("Failed to run doctor:", e);
+      throw e;
     }
   }
 }

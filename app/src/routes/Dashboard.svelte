@@ -26,6 +26,7 @@
     Zap,
     Brain,
     Heart,
+    Stethoscope,
   } from "lucide-svelte";
 
   let showSettings = $state(false);
@@ -40,6 +41,7 @@
   let stopping = $state(false);
   let error = $state<string | null>(null);
   let verbose = $state(false);
+  let runningDoctor = $state(false);
   let appVersion = $state("0.0.0");
 
   onMount(async () => {
@@ -93,6 +95,18 @@
       error = `Failed to stop: ${e}`;
     } finally {
       stopping = false;
+    }
+  }
+
+  async function handleDoctor() {
+    runningDoctor = true;
+    error = null;
+    try {
+      await serviceStore.runDoctor();
+    } catch (e) {
+      error = `Failed to run doctor: ${e}`;
+    } finally {
+      runningDoctor = false;
     }
   }
 
@@ -303,10 +317,16 @@
           </Button>
         </div>
       {:else}
-        <Button onclick={handleStart} loading={starting} disabled={starting} size="lg">
-          <Play class="w-5 h-5" />
-          Start Now
-        </Button>
+        <div class="flex gap-3">
+          <Button onclick={handleStart} loading={starting} disabled={starting} size="lg">
+            <Play class="w-5 h-5" />
+            Start Now
+          </Button>
+          <Button variant="secondary" onclick={handleDoctor} loading={runningDoctor} disabled={runningDoctor} size="lg">
+            <Stethoscope class="w-5 h-5" />
+            Doctor
+          </Button>
+        </div>
 
         <!-- Verbose Checkbox -->
         <label class="flex items-center gap-2 cursor-pointer">
