@@ -8,10 +8,10 @@ tasks:
 examples:
   - "Search ClawHub for a Slack skill"
   - "Install the weather skill from ClawHub"
+  - "Install https://clawhub.ai/steipete/slack"
   - "Update all my ClawHub skills"
   - "What skills are available for home automation?"
   - "Show me my installed ClawHub skills"
-  - "Uninstall the twitter skill"
 safe_defaults:
   dir: "~/.macbot/skills"
 confirm_before_write:
@@ -45,10 +45,18 @@ If the `clawhub` command is not found, install it first:
 npm install -g clawhub
 ```
 
+### URL Handling
+When the user provides a ClawHub URL like `https://clawhub.ai/steipete/slack`, extract the slug from the path: `steipete/slack`. The slug is everything after `clawhub.ai/`. Then use it directly:
+```
+clawhub install --dir ~/.macbot/skills steipete/slack
+```
+The skill ID for enrichment is the part after the `/` (e.g., `slack`).
+
 ### Acting Autonomously
 When the user asks to search for or install a skill, just do it. Don't ask for confirmation before searching. Only confirm before installing (since it writes to disk).
 
 ### Full Install Workflow
-1. `run_shell_command`: `clawhub install --dir ~/.macbot/skills <skill-name>`
-2. `enrich_skill(skill_id="<skill-id>")` (MANDATORY — do this immediately)
-3. Then tell the user the skill is ready
+1. If given a URL, extract the slug (e.g., `https://clawhub.ai/steipete/slack` → `steipete/slack`)
+2. `run_shell_command`: `clawhub install --dir ~/.macbot/skills <slug>`
+3. `enrich_skill(skill_id="<skill-id>")` (MANDATORY — do this immediately)
+4. Then tell the user the skill is ready
