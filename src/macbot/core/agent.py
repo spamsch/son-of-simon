@@ -231,6 +231,12 @@ Use these when:
 - You discover a workaround or technique worth recalling
 - The user expresses a preference for how things should be done
 - You learn factual information about the user (location, preferences, etc.)
+
+## Reusable Extraction Scripts
+
+When you write a JavaScript snippet (via `browser_execute_js`) that successfully extracts structured data from a webpage, **save it to memory** using `memory_add_lesson` with the site domain as the topic (e.g., "golem.de extraction script"). Include the full JS code in the lesson.
+
+On subsequent requests for the same site, **check memory first** (`memory_list`) for a saved script. If one exists, skip the visual snapshot and run the script directly — it's much faster and cheaper. Only fall back to a snapshot if the script fails (the page layout may have changed), and if so, update the saved script.
 """
 
     def _build_important_rules(self) -> str:
