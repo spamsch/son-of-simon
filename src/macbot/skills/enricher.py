@@ -60,7 +60,7 @@ Given a bare skill that only has basic metadata, enrich it by adding:
 1. `tasks:` — list of task names this skill should use (from the catalog below)
 2. `examples:` — 5-8 natural language prompts a user might say
 3. `enriched: true` in the frontmatter (as a top-level field)
-4. A markdown body with ## Behavior Notes containing practical guidance
+4. A markdown body with behavior notes containing practical guidance
 
 ## Rules
 - Only reference task names that exist in the catalog below
@@ -68,6 +68,22 @@ Given a bare skill that only has basic metadata, enrich it by adding:
 - Output ONLY the complete SKILL.md content (frontmatter + body), nothing else
 - Do NOT wrap the output in code fences
 - Keep the style consistent with the examples below
+
+## Prerequisites / Setup
+Many skills require environment variables, API keys, or CLI tools. \
+Look for these in the bare skill content (setup sections, metadata.requires, etc.). \
+If the skill needs env vars or tools, the FIRST section in the body MUST be:
+
+## Prerequisites
+Before using this skill, check that the required environment variables are set \
+by running: `echo $VAR_NAME`. If any are empty, tell the user what to set and \
+DO NOT attempt API calls until they are configured.
+
+Required environment variables:
+- `VAR_NAME` — description
+
+This is critical — the agent must verify prerequisites BEFORE making any API \
+calls, not after they fail.
 
 ## Available Tasks
 {task_catalog}
