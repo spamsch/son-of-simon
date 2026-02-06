@@ -73,6 +73,10 @@ First success (safe demo prompts):
   <img src="docs/images/dashboard.png" alt="Dashboard" width="500">
 </p>
 
+<p align="center">
+  <img src="docs/son-of-simon_preview_blur.gif" alt="Blur preview" width="500">
+</p>
+
 ## Skills (AgentSkills compatible)
 
 Skills provide guidance for handling specific types of requests. Son of Simon comes with built-in skills for Mail, Calendar, Reminders, Notes, Safari, and Browser Automation. You can enable or disable skills, customize built-in ones, or create your own.
