@@ -72,9 +72,11 @@ class MacbotService:
 
     def __init__(self):
         """Initialize the service."""
+        from rich.console import Console
         self.registry = create_default_registry()
         self.agent = Agent(self.registry)  # Default agent for cron jobs
         self._chat_agents: dict[str, Agent] = {}  # Per-chat agents for Telegram conversations
+        self._console = Console()
         self.cron_service: CronService | None = None
         self.telegram_service = None
         self._running = False
@@ -145,6 +147,27 @@ class MacbotService:
             logger.info(f"Auto-saved MACBOT_TELEGRAM_CHAT_ID={chat_id}")
         except Exception as e:
             logger.error(f"Failed to auto-save chat ID: {e}")
+
+    async def _detect_chat_id_at_startup(self) -> None:
+        """Try to detect chat ID from pending Telegram messages at startup.
+
+        Does a quick non-blocking poll. If the user previously sent a message
+        to the bot (e.g. during onboarding), we pick up the chat ID without
+        requiring them to send another message.
+        """
+        try:
+            from macbot.telegram import TelegramBot
+            bot = TelegramBot(settings.telegram_bot_token)
+            updates = await bot.get_updates(offset=None, timeout=0)
+            await bot.close()
+
+            for update in updates:
+                if update.message:
+                    chat_id = str(update.message.chat_id)
+                    self._save_chat_id(chat_id)
+                    return
+        except Exception as e:
+            logger.debug(f"Chat ID startup detection failed (non-fatal): {e}")
 
     def _setup_cron(self) -> bool:
         """Set up the cron service.
@@ -242,13 +265,16 @@ class MacbotService:
                 # Restore original method
                 agent._execute_tool_calls = original_execute
 
-                # Show response in terminal
+                # Show response in terminal as rendered markdown
+                from rich.markdown import Markdown
+                from rich.panel import Panel
                 timestamp = datetime.now().strftime("%H:%M:%S")
-                print(f"[{timestamp}] 🤖 Response:")
-                # Indent the response for readability
-                for line in result.split('\n'):
-                    print(f"    {line}")
-                print()
+                self._console.print(Panel(
+                    Markdown(result),
+                    title=f"[dim]{timestamp}[/dim] 🤖 Response",
+                    border_style="green",
+                    padding=(0, 1),
+                ))
 
                 logger.info(f"Telegram: Response sent, length: {len(result)}, tools: {len(tools_called)}")
                 return result
@@ -308,10 +334,14 @@ class MacbotService:
                 logger.info(f"Heartbeat: Running '{content[:50]}...'")
                 result = await self.agent.run(content, stream=False)
                 logger.info(f"Heartbeat: Completed, result length: {len(result)}")
-                print(f"[{timestamp}] 💓 Heartbeat result:")
-                for line in result.split('\n'):
-                    print(f"    {line}")
-                print()
+                from rich.markdown import Markdown
+                from rich.panel import Panel
+                self._console.print(Panel(
+                    Markdown(result),
+                    title=f"[dim]{timestamp}[/dim] 💓 Heartbeat",
+                    border_style="magenta",
+                    padding=(0, 1),
+                ))
 
                 # Send result to Telegram if configured
                 if self.telegram_service and result:
@@ -529,6 +559,11 @@ class MacbotService:
             ok, msg = await validate_token(settings.telegram_bot_token)
             if ok:
                 logger.info(f"Starting Telegram service as {msg}")
+
+                # Auto-detect chat ID from pending messages if not configured
+                if not settings.telegram_chat_id:
+                    await self._detect_chat_id_at_startup()
+
                 self._tasks.append(asyncio.create_task(self._run_telegram()))
             else:
                 logger.error(f"Telegram token invalid: {msg}")
@@ -630,8 +665,10 @@ def run_service(daemon: bool = False, verbose: bool = False, foreground: bool = 
         console.print(f"  [dim]○[/dim] Scheduled Tasks: None configured")
 
     if has_telegram:
-        chat_info = f" (chat: {status['telegram']['chat_id']})" if status['telegram']['chat_id'] else ""
+        chat_info = f" (chat: {status['telegram']['chat_id']})" if status['telegram'].get('chat_id') else ""
         console.print(f"  [green]✓[/green] Telegram: Connected{chat_info}")
+        if not status['telegram'].get('chat_id'):
+            console.print(f"  [yellow]![/yellow] Chat ID not set — send any message to your bot on Telegram to link it automatically")
     else:
         console.print(f"  [dim]○[/dim] Telegram: Not connected")
 

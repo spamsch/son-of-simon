@@ -21,7 +21,8 @@ class TelegramSendTask(Task):
         return (
             "Send a message to the user via Telegram. Use this to proactively "
             "notify the user about important information, task completion, or alerts. "
-            "Only works when Telegram is configured."
+            "The chat ID is auto-detected — just call this tool without a chat_id "
+            "and it will find the right recipient automatically."
         )
 
     async def execute(self, message: str, chat_id: str | None = None) -> dict[str, Any]:
@@ -44,10 +45,18 @@ class TelegramSendTask(Task):
             }
 
         target_chat = chat_id or settings.telegram_chat_id
+
+        # Auto-detect chat ID from pending Telegram messages if not configured
+        if not target_chat:
+            target_chat = await self._detect_chat_id(token)
+
         if not target_chat:
             return {
                 "success": False,
-                "error": "No chat_id provided and MACBOT_TELEGRAM_CHAT_ID not set",
+                "error": (
+                    "No chat_id available. Please send any message to your "
+                    "Telegram bot first, then try again."
+                ),
             }
 
         try:
@@ -64,6 +73,44 @@ class TelegramSendTask(Task):
                 "success": False,
                 "error": f"Failed to send message: {e}",
             }
+
+
+    async def _detect_chat_id(self, token: str) -> str | None:
+        """Try to detect chat ID from pending Telegram messages.
+
+        Also persists the chat ID to ~/.macbot/.env and updates in-memory
+        settings so subsequent calls don't need to re-detect.
+        """
+        from macbot.telegram import TelegramBot
+        from pathlib import Path
+
+        try:
+            bot = TelegramBot(token)
+            updates = await bot.get_updates(offset=None, timeout=0)
+            await bot.close()
+
+            for update in updates:
+                if update.message:
+                    chat_id = str(update.message.chat_id)
+
+                    # Persist to config
+                    env_file = Path.home() / ".macbot" / ".env"
+                    if env_file.exists():
+                        content = env_file.read_text()
+                    else:
+                        content = ""
+
+                    lines = [l for l in content.splitlines()
+                             if not l.strip().startswith("MACBOT_TELEGRAM_CHAT_ID=")]
+                    lines.append(f"MACBOT_TELEGRAM_CHAT_ID={chat_id}")
+                    env_file.write_text("\n".join(lines) + "\n")
+
+                    # Update in-memory
+                    settings.telegram_chat_id = chat_id
+                    return chat_id
+        except Exception:
+            pass
+        return None
 
 
 def register_telegram_tasks(registry) -> None:
