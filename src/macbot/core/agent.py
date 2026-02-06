@@ -254,6 +254,7 @@ On subsequent requests for the same site, **check memory first** (`memory_list`)
   - `move_email` NOT osascript for moving emails
   - `download_attachments` NOT osascript for attachments
 - If a dedicated tool fails, report the error. Do NOT work around it with run_shell_command.
+- **Skills that document shell/CLI commands**: Many installed skills (e.g., Trello, Slack) work by running CLI commands or curl/API calls documented in their SKILL.md body. You CAN and SHOULD use `run_shell_command` to execute these commands. The skill body IS your instruction manual — follow its documented commands. Do not say "I don't have a tool for this" when the skill shows you exactly what shell commands to run.
 """
 
     async def _get_llm_response(self, stream: bool = False, verbose: bool = False) -> LLMResponse:
