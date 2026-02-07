@@ -906,19 +906,19 @@ class CreateNoteFolderTask(Task):
 
     async def execute(
         self,
-        name: str,
+        folder_name: str,
         parent: str | None = None,
     ) -> dict[str, Any]:
         """Create a note folder.
 
         Args:
-            name: Name for the new folder.
+            folder_name: Name for the new folder.
             parent: Parent folder name to nest inside (optional).
 
         Returns:
             Dictionary with creation result.
         """
-        args = ["--name", name]
+        args = ["--name", folder_name]
         if parent:
             args.extend(["--parent", parent])
         return await run_script("notes/create-folder.sh", args)
@@ -935,16 +935,16 @@ class DeleteNoteFolderTask(Task):
     def description(self) -> str:
         return "Delete a folder in Notes.app. Folder must be empty (move or delete notes first)."
 
-    async def execute(self, name: str) -> dict[str, Any]:
+    async def execute(self, folder_name: str) -> dict[str, Any]:
         """Delete a note folder.
 
         Args:
-            name: Name of the folder to delete.
+            folder_name: Name of the folder to delete.
 
         Returns:
             Dictionary with deletion result.
         """
-        return await run_script("notes/delete-folder.sh", ["--name", name])
+        return await run_script("notes/delete-folder.sh", ["--name", folder_name])
 
 
 class RenameNoteFolderTask(Task):
@@ -958,17 +958,17 @@ class RenameNoteFolderTask(Task):
     def description(self) -> str:
         return "Rename a folder in Notes.app."
 
-    async def execute(self, name: str, new_name: str) -> dict[str, Any]:
+    async def execute(self, folder_name: str, new_name: str) -> dict[str, Any]:
         """Rename a note folder.
 
         Args:
-            name: Current folder name.
+            folder_name: Current folder name.
             new_name: New folder name.
 
         Returns:
             Dictionary with rename result.
         """
-        return await run_script("notes/rename-folder.sh", ["--name", name, "--new-name", new_name])
+        return await run_script("notes/rename-folder.sh", ["--name", folder_name, "--new-name", new_name])
 
 
 class MoveNoteTask(Task):
