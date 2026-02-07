@@ -10,19 +10,6 @@
 
 ---
 
-## Start here (early testers)
-
-If you're here from a social media post, the fastest way to help is to get to a first "it worked" moment, then report friction.
-
-1. Download the latest `.dmg` from Releases and complete the setup wizard
-2. Grant the macOS permissions it asks for (especially **Automation**)
-3. (Optional) At the end of onboarding, click the Doctor button to verify permissions and prerequisites (or run `son doctor` from Terminal; see below)
-4. Try a safe, read-only prompt:
-   - "What's on my calendar today? List it as bullets."
-   - "Summarize my unread emails and highlight anything urgent. Don't reply or send anything."
-
-If you hit an error, jump to **FAQ** below and open an Issue/Discussion with the exact error message plus the Doctor output.
-
 ## What is this?
 
 Son of Simon is an AI assistant for macOS that works directly with your built-in Apple apps — Mail, Calendar, Reminders, Notes, and Safari.
@@ -73,12 +60,6 @@ First success (safe demo prompts):
   <img src="docs/images/dashboard.png" alt="Dashboard" width="500">
 </p>
 
-## Quick video showing interaction from Telegram
-
-<p align="center">
-  <img src="docs/son-of-simon_preview_blur.gif" alt="Blur preview" width="500">
-</p>
-
 ## Skills (AgentSkills compatible)
 
 Skills provide guidance for handling specific types of requests. Son of Simon comes with built-in skills for Mail, Calendar, Reminders, Notes, Safari, and Browser Automation. You can enable or disable skills, customize built-in ones, or create your own.
@@ -92,10 +73,6 @@ Each skill defines:
 - Example prompts that trigger it
 - Safe defaults to prevent mistakes
 - Actions that require your confirmation
-
-<p align="center">
-  <img src="docs/images/skill-detail.png" alt="Skill Detail" width="500">
-</p>
 
 Custom skills are saved to `~/.macbot/skills/`. Skills use the **AgentSkills standard** (the same SKILL.md format used by OpenClaw, Claude Code, and Cursor) so you can drop in skills from any compatible tool and they just work.
 
@@ -127,6 +104,10 @@ Son of Simon works with multiple AI providers. Pick one during setup or change i
 
 OpenRouter gives you access to dozens of models with a single API key. Good if you want to experiment.
 
+<p align="center">
+  <img src="docs/images/settings.png" alt="Settings" width="500">
+</p>
+
 ## Memory and Heartbeat
 
 **Memory** — Edit `~/.macbot/memory.yaml` from the dashboard (Brain icon) or any text editor. This file is loaded into every agent interaction as persistent context. Use it to store preferences, facts, or instructions the agent should always know.
@@ -138,10 +119,6 @@ Use it for recurring checks like:
 - Check Calendar for upcoming meetings
 - Check Reminders for items due today
 - Suggest follow-ups on unanswered email threads
-
-<p align="center">
-  <img src="docs/images/heartbeat.png" alt="Heartbeat" width="500">
-</p>
 
 ## Requirements
 

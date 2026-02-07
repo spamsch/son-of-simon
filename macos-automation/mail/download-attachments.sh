@@ -35,6 +35,7 @@ ACCOUNT=""
 MAILBOX=""
 OUTPUT_DIR=""
 LIMIT=5
+ALL_MAILBOXES=false
 
 # Parse arguments
 while [[ $# -gt 0 ]]; do
@@ -66,6 +67,10 @@ while [[ $# -gt 0 ]]; do
         --limit)
             LIMIT="$2"
             shift 2
+            ;;
+        --all-mailboxes)
+            ALL_MAILBOXES=true
+            shift
             ;;
         -h|--help)
             head -35 "$0" | tail -30
@@ -128,23 +133,37 @@ tell application "Mail"
                     set end of mailboxesToSearch to mailbox "$MAILBOX_ESCAPED" of acct
                 end try
             end repeat
+        else if $ALL_MAILBOXES then
+            repeat with acct in accounts
+                set mailboxesToSearch to mailboxesToSearch & (mailboxes of acct)
+            end repeat
         else
+            -- Default: search inbox + Archive of all accounts
             set mailboxesToSearch to {inbox}
+            repeat with acct in accounts
+                try
+                    set mailboxesToSearch to mailboxesToSearch & {mailbox "Archive" of acct}
+                end try
+            end repeat
         end if
     end if
 
     -- Search for matching messages
     repeat with mb in mailboxesToSearch
         try
-            repeat with msg in messages of mb
-                set includeMsg to true
-
-                -- Check message ID (most specific)
-                if "$MESSAGE_ID_ESCAPED" is not "" then
-                    if message id of msg is not "$MESSAGE_ID_ESCAPED" then
-                        set includeMsg to false
+            -- If searching by message_id, use direct lookup (much faster)
+            if "$MESSAGE_ID_ESCAPED" is not "" then
+                set targetId to "$MESSAGE_ID_ESCAPED"
+                try
+                    set foundMsgs to (messages of mb whose message id is targetId)
+                    if (count of foundMsgs) > 0 then
+                        set matchingMsgs to matchingMsgs & foundMsgs
                     end if
-                else
+                end try
+            else
+                repeat with msg in messages of mb
+                    set includeMsg to true
+
                     -- Check sender filter
                     if "$SENDER_ESCAPED" is not "" then
                         if sender of msg does not contain "$SENDER_ESCAPED" then
@@ -158,15 +177,16 @@ tell application "Mail"
                             set includeMsg to false
                         end if
                     end if
-                end if
 
-                if includeMsg then
-                    set end of matchingMsgs to msg
-                    if (count of matchingMsgs) >= $LIMIT then
-                        exit repeat
+                    if includeMsg then
+                        set end of matchingMsgs to msg
+                        if (count of matchingMsgs) >= $LIMIT then
+                            exit repeat
+                        end if
                     end if
-                end if
-            end repeat
+                end repeat
+            end if
+
             if (count of matchingMsgs) >= $LIMIT then
                 exit repeat
             end if

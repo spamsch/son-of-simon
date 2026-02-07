@@ -57,6 +57,7 @@ Thumbs.db
 # Project specific
 *.log
 output/
+store/
 
 # Node.js (for Tauri app)
 node_modules/

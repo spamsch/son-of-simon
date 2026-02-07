@@ -327,7 +327,9 @@ class DownloadAttachmentsTask(Task):
     def description(self) -> str:
         return (
             "Download attachments from emails to a specified folder. Best used with message_id "
-            "from search_emails for precise matching."
+            "from search_emails for precise matching. "
+            "Use output='/tmp/attachments' for a guaranteed-writable location. "
+            "Avoid guessing usernames in paths — use ~/Downloads or /tmp instead."
         )
 
     async def execute(
@@ -338,17 +340,19 @@ class DownloadAttachmentsTask(Task):
         subject: str | None = None,
         account: str | None = None,
         mailbox: str | None = None,
+        all_mailboxes: bool = False,
         limit: int = 5
     ) -> dict[str, Any]:
         """Download attachments from matching emails.
 
         Args:
-            output: Destination folder for attachments.
+            output: Destination folder for attachments (e.g. ~/Downloads or /tmp/attachments). Supports ~ expansion.
             message_id: Match specific email by Message-ID (recommended).
             sender: Match emails from sender containing this pattern.
             subject: Match emails with subject containing this pattern.
             account: Only search in specified account.
             mailbox: Only search in specified mailbox (default: Inbox).
+            all_mailboxes: Search all mailboxes including Sent, Archive, Trash, etc.
             limit: Maximum number of emails to process.
 
         Returns:
@@ -356,6 +360,10 @@ class DownloadAttachmentsTask(Task):
         """
         if not message_id and not sender and not subject:
             return {"success": False, "error": "Must specify message_id, sender, or subject"}
+
+        # Expand ~ and resolve to absolute path so the shell script gets a real path
+        output = os.path.expanduser(output)
+        output = os.path.abspath(output)
 
         args = ["--output", output]
         if message_id:
@@ -368,6 +376,8 @@ class DownloadAttachmentsTask(Task):
             args.extend(["--account", account])
         if mailbox:
             args.extend(["--mailbox", mailbox])
+        if all_mailboxes:
+            args.append("--all-mailboxes")
         args.extend(["--limit", str(limit)])
 
         return await run_script("mail/download-attachments.sh", args, timeout=60)
@@ -1029,6 +1039,95 @@ class ListSafariTabsTask(Task):
 
 
 # =============================================================================
+# SPOTLIGHT TASKS
+# =============================================================================
+
+class SpotlightSearchTask(Task):
+    """Search for emails, files, and documents using macOS Spotlight index."""
+
+    @property
+    def name(self) -> str:
+        return "spotlight_search"
+
+    @property
+    def description(self) -> str:
+        return (
+            "Fast indexed search using macOS Spotlight (mdfind). "
+            "Much faster than search_emails for finding emails by body text or across all mailboxes. "
+            "Returns Message-IDs that can be used with search_emails, move_email, and download_attachments. "
+            "Also searches files and documents on disk by name, content, or type."
+        )
+
+    async def execute(
+        self,
+        query: str | None = None,
+        content_type: str | None = None,
+        sender: str | None = None,
+        recipient: str | None = None,
+        subject: str | None = None,
+        body: str | None = None,
+        file_name: str | None = None,
+        days: int | None = None,
+        unread: bool = False,
+        flagged: bool = False,
+        has_attachments: bool = False,
+        directory: str | None = None,
+        limit: int = 20
+    ) -> dict[str, Any]:
+        """Search using Spotlight.
+
+        Args:
+            query: Free text search across content.
+            content_type: Filter by type: "email", "pdf", "image", "document", "presentation", "spreadsheet".
+            sender: Email sender address pattern (partial match, for emails).
+            recipient: Email recipient address pattern (partial match, for emails).
+            subject: Email subject text (partial match, for emails).
+            body: Search email body or file content text (fast indexed search).
+            file_name: Search by file/document name pattern.
+            days: Only return results from the last N days.
+            unread: Only return unread emails.
+            flagged: Only return flagged emails.
+            has_attachments: Only return emails with attachments.
+            directory: Restrict search to a specific directory path.
+            limit: Maximum number of results to return.
+
+        Returns:
+            Dictionary with search results including metadata.
+        """
+        if not any([query, sender, recipient, subject, body, file_name, unread, flagged, has_attachments]):
+            return {"success": False, "error": "Must specify at least one search criterion"}
+
+        args = []
+        if query:
+            args.extend(["--query", query])
+        if content_type:
+            args.extend(["--type", content_type])
+        if sender:
+            args.extend(["--from", sender])
+        if recipient:
+            args.extend(["--to", recipient])
+        if subject:
+            args.extend(["--subject", subject])
+        if body:
+            args.extend(["--body", body])
+        if file_name:
+            args.extend(["--name", file_name])
+        if days:
+            args.extend(["--days", str(days)])
+        if unread:
+            args.append("--unread")
+        if flagged:
+            args.append("--flagged")
+        if has_attachments:
+            args.append("--has-attachments")
+        if directory:
+            args.extend(["--dir", os.path.expanduser(directory)])
+        args.extend(["--limit", str(limit)])
+
+        return await run_script("spotlight/search.sh", args, timeout=30)
+
+
+# =============================================================================
 # WEB TASKS
 # =============================================================================
 
@@ -1129,6 +1228,9 @@ def register_macos_tasks(registry) -> None:
     registry.register(OpenUrlTask())
     registry.register(ExtractLinksTask())
     registry.register(ListSafariTabsTask())
+
+    # Spotlight tasks
+    registry.register(SpotlightSearchTask())
 
     # Web tasks
     registry.register(GetHackerNewsTask())
