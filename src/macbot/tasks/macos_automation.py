@@ -1132,7 +1132,44 @@ class SpotlightSearchTask(Task):
             args.extend(["--dir", os.path.expanduser(directory)])
         args.extend(["--limit", str(limit)])
 
-        return await run_script("spotlight/search.sh", args, timeout=30)
+        result = await run_script("spotlight/search.sh", args, timeout=30)
+
+        # Assign unique short IDs to each result for easy user reference
+        if result.get("success") and result.get("output"):
+            result["output"] = self._add_result_ids(result["output"])
+
+        return result
+
+    @staticmethod
+    def _add_result_ids(output: str) -> str:
+        """Replace numeric indices with unique short IDs (e.g. [f3a]) for easy reference.
+
+        Adds a Ref: field line after each header so the LLM includes it in responses.
+        """
+        import re
+        import random
+        import string
+
+        chars = string.ascii_lowercase + string.digits
+        has_ids = False
+
+        def _make_id() -> str:
+            return "".join(random.choices(chars, k=3))
+
+        def _replace(m: re.Match) -> str:
+            nonlocal has_ids
+            has_ids = True
+            kind = m.group(1)  # "File", "Email", or "Email file"
+            uid = _make_id()
+            return f"--- {kind} [{uid}] ---\nRef: {uid}"
+
+        output = re.sub(r"--- (File|Email file|Email) \d+ ---", _replace, output)
+
+        if has_ids:
+            output = ("IMPORTANT: Always include the Ref ID (e.g. [abc]) for each result "
+                      "so the user can reference files by ID.\n\n" + output)
+
+        return output
 
 
 # =============================================================================

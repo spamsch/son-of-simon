@@ -695,7 +695,8 @@ def run_service(daemon: bool = False, verbose: bool = False, foreground: bool = 
     has_telegram = status["telegram"]["enabled"]
 
     # Show what will run
-    console.print("[bold]Starting Son of Simon...[/bold]\n")
+    from macbot import __version__
+    console.print(f"[bold]Starting Son of Simon[/bold] v{__version__}...\n")
 
     console.print(f"  [green]✓[/green] Heartbeat: every 30 minutes, {HEARTBEAT_ACTIVE_START}:00-{HEARTBEAT_ACTIVE_END}:00 (~/.macbot/heartbeat.md)")
 
@@ -778,6 +779,12 @@ def run_service(daemon: bool = False, verbose: bool = False, foreground: bool = 
             except KeyboardInterrupt:
                 console.print("\n[dim]Stopping...[/dim]")
                 asyncio.run(service.stop())
+                # Close stdin to unblock any thread still waiting on console.input()
+                import sys
+                try:
+                    sys.stdin.close()
+                except Exception:
+                    pass
             console.print("[dim]Service stopped.[/dim]")
 
 

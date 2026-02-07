@@ -86,12 +86,28 @@ Skills provide declarative guidance that improves agent reliability through exam
 ### Tauri Integration
 Python sidecar binary (PyInstaller) bundled at `Contents/MacOS/son`. Tauri spawns it via shell plugin. Config in `app/src-tauri/capabilities/default.json`.
 
+### Spotlight Search (`macos-automation/spotlight/`)
+`spotlight_search` task wraps `mdfind` for fast indexed file/document search. Supports searching by name, content, type, modification date, and last-used date (`kMDItemLastUsedDate`).
+
+**Important constraints:**
+- **Mail.app is NOT searchable via mdfind.** Mail uses Core Spotlight, a private index inaccessible to `mdfind` or any external tool. Always use the AppleScript-based `search_emails` for Mail.app.
+- `mdfind` does not support `!=` operator — use post-processing (grep -v) to exclude results.
+- macOS BSD `awk` does not support 3-argument `match()` — use `$1` for field extraction instead.
+- `.eml` files on disk have content type `com.apple.mail.email` (not `.emlx`).
+
+### AppleScript Mail Performance
+- **Always use `whose` clause** for message lookups: `messages of mb whose message id is targetId` is near-instant.
+- **Never iterate all messages** checking properties one by one — each Apple Event takes ~0.1-0.5s, causing timeouts on large mailboxes.
+- When searching by message_id, the `download-attachments.sh` and `search-emails.sh` scripts both use the fast `whose` pattern.
+- Default mailbox search should include inbox + Archive (not just inbox).
+
 ## Key Patterns
 
 - **Async everywhere** - All I/O uses async/await
 - **Type hints** - mypy strict mode enforced
 - **Environment config** - No secrets in code, all via `~/.macbot/.env`
 - **AppleScript bridges** - macOS automation via scripts in `macos-automation/`
+- **Skills auto-discovery** - Drop `SKILL.md` into `skills/<name>/` — no registration needed
 
 ## Release Process
 

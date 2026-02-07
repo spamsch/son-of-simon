@@ -11,6 +11,7 @@ The agent follows a ReAct-style pattern:
 import json
 import logging
 import platform
+import time
 from collections.abc import Callable
 from typing import Any
 
@@ -97,7 +98,10 @@ class Agent:
             The final response from the agent
         """
         if continue_conversation and self.messages:
-            # Continue existing conversation - just add the new user message
+            # Condense prior exchanges to reduce token usage and avoid
+            # the LLM re-answering old questions when it sees dangling
+            # tool calls / tool results without a final answer.
+            self._condense_history()
             self.messages.append(Message(role="user", content=goal))
         else:
             # Start fresh conversation
@@ -152,6 +156,8 @@ class Agent:
                 await self._execute_tool_calls(response, verbose, on_event=on_event)
             else:
                 # No tool calls means the agent has finished
+                # Store the final response so multi-turn conversations include it
+                self.messages.append(Message(role="assistant", content=response.content))
                 return response.content or "Task completed."
 
         return f"Reached maximum iterations ({self.config.max_iterations}) without completing the goal. Increase MACBOT_MAX_ITERATIONS to allow more steps."
@@ -340,9 +346,11 @@ On subsequent requests for the same site, **check memory first** (`memory_list`)
                     "arguments": args_summary,
                 })
 
+            t0 = time.monotonic()
             result = await self.task_registry.execute(
                 tool_call.name, **tool_call.arguments
             )
+            elapsed = time.monotonic() - t0
 
             # Emit tool_result event
             if on_event:
@@ -353,9 +361,10 @@ On subsequent requests for the same site, **check memory first** (`memory_list`)
                     "error": result.error if not result.success else None,
                 })
 
+            elapsed_str = f"{elapsed:.1f}s"
             if verbose:
                 if result.success:
-                    console.print(f"  [green]✓ Success[/green]")
+                    console.print(f"  [green]✓ Success[/green] [dim]({elapsed_str})[/dim]")
                     output_str = str(result.output) if result.output else "(no output)"
                     # Show truncated output
                     if len(output_str) > 500:
@@ -364,11 +373,13 @@ On subsequent requests for the same site, **check memory first** (`memory_list`)
                     else:
                         console.print(f"  [dim]Output:[/dim] {output_str}")
                 else:
-                    console.print(f"  [red]✗ Failed[/red]")
+                    console.print(f"  [red]✗ Failed ({elapsed_str})[/red]")
                     console.print(f"  [red]Error:[/red] {result.error}")
-            elif not result.success:
-                # Always show errors, even in non-verbose mode
-                console.print(f"[red]  ✗ {tool_call.name} failed:[/red] {result.error}")
+            else:
+                if result.success:
+                    console.print(f"[dim]  ✓ {tool_call.name} ({elapsed_str})[/dim]")
+                else:
+                    console.print(f"[red]  ✗ {tool_call.name} failed ({elapsed_str}):[/red] {result.error}")
 
             # Format and add tool result to messages
             result_str = self._format_tool_result(result)
@@ -383,6 +394,62 @@ On subsequent requests for the same site, **check memory first** (`memory_list`)
             return str(result.output)
         else:
             return f"Error: {result.error}"
+
+    def _condense_history(self) -> None:
+        """Condense completed exchanges to just user/assistant text pairs.
+
+        In multi-turn conversations, intermediate tool_calls and tool_result
+        messages from prior exchanges are no longer needed. Keeping them
+        wastes tokens and can confuse the LLM into re-executing old tool
+        calls or re-answering old questions.
+
+        This walks through messages and for each completed exchange
+        (user → assistant+tool_calls → tool_results → ... → assistant text),
+        keeps only the user message and the final assistant text response.
+        """
+        if not self.messages:
+            return
+
+        condensed: list[Message] = []
+        i = 0
+        while i < len(self.messages):
+            msg = self.messages[i]
+
+            if msg.role == "user":
+                # Start of an exchange — keep the user message
+                condensed.append(msg)
+                i += 1
+
+                # Scan forward through assistant+tool_calls and tool results
+                # looking for the final assistant text response
+                last_assistant_text: Message | None = None
+                j = i
+                while j < len(self.messages):
+                    m = self.messages[j]
+                    if m.role == "user":
+                        # Next exchange starts — stop scanning
+                        break
+                    if m.role == "assistant" and not m.tool_calls and m.content:
+                        # This is a final text response for this exchange
+                        last_assistant_text = m
+                    j += 1
+
+                if last_assistant_text is not None:
+                    # Completed exchange — keep only the final answer
+                    condensed.append(last_assistant_text)
+                    i = j
+                else:
+                    # Incomplete exchange (no final text yet) — keep everything
+                    # This handles the current in-progress exchange
+                    while i < len(self.messages) and self.messages[i].role != "user":
+                        condensed.append(self.messages[i])
+                        i += 1
+            else:
+                # Orphaned non-user message at the start — keep it
+                condensed.append(msg)
+                i += 1
+
+        self.messages = condensed
 
     async def run_single_task(
         self, task_name: str, verbose: bool = False, **kwargs: Any

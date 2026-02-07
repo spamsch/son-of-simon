@@ -402,6 +402,16 @@ PAGE_CONTENT=$(./safari/get-current-page.sh --with-text)
 
 ---
 
+## Performance: Notes vs Reminders for Todos
+
+Reminders.app has significant AppleScript performance issues — each Apple Event incurs ~2 seconds of overhead, and bulk property fetches often fail with error -1728. Listing or searching reminders across multiple lists can take 10-30 seconds.
+
+**For todo/task tracking, prefer Notes.app over Reminders.app.** Notes is much faster via AppleScript and supports structured lists, checklists, and rich text. Use a dedicated "Todos" note or folder in Notes instead of Reminders lists.
+
+Use Reminders only when you specifically need its features (due dates, recurring reminders, location-based alerts, Siri integration).
+
+---
+
 ## Troubleshooting
 
 ### "application isn't running" errors

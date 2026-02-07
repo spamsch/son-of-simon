@@ -3,7 +3,7 @@
 from importlib.metadata import version, PackageNotFoundError
 
 try:
-    __version__ = version("macbot")
+    __version__ = version("sonofsimon")
 except PackageNotFoundError:
     __version__ = "0.0.0-dev"
 
