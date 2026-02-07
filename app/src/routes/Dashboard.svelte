@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Button } from "$lib/components/ui";
+  import { Button, Input } from "$lib/components/ui";
   import { SkillsList, SkillDetail, SkillEditor } from "$lib/components/skills";
   import ChatPanel from "$lib/components/ChatPanel.svelte";
   import { chatStore } from "$lib/stores/chat.svelte";
@@ -27,6 +27,8 @@
     Check,
     X,
     RotateCcw,
+    Save,
+    FileText,
   } from "lucide-svelte";
 
   let showSettings = $state(false);
@@ -46,8 +48,6 @@
     appVersion = await getVersion();
     // Auto-start the service
     chatStore.connect();
-    // Check permissions in background
-    chatStore.checkPermissions().catch(() => {});
   });
 
   async function loadConfig() {
@@ -193,6 +193,216 @@
       case "connecting": return "text-warning";
       case "disconnected": return "text-text-muted";
       case "error": return "text-error";
+    }
+  }
+
+  // --- Settings panel: AI Provider config ---
+
+  interface ModelOption {
+    id: string;
+    name: string;
+    tag?: string;
+  }
+
+  interface ProviderConfig {
+    id: string;
+    name: string;
+    keyPrefix: string;
+    envPrefixed: string;
+    envStandard: string;
+    models: ModelOption[];
+  }
+
+  const providers: ProviderConfig[] = [
+    {
+      id: "anthropic",
+      name: "Anthropic (Claude)",
+      keyPrefix: "sk-ant-",
+      envPrefixed: "MACBOT_ANTHROPIC_API_KEY",
+      envStandard: "ANTHROPIC_API_KEY",
+      models: [
+        { id: "anthropic/claude-sonnet-4-5", name: "Claude Sonnet 4.5", tag: "Recommended" },
+        { id: "anthropic/claude-opus-4-6", name: "Claude Opus 4.6", tag: "Most capable" },
+        { id: "anthropic/claude-haiku-4-5", name: "Claude Haiku 4.5", tag: "Fast & cheap" },
+      ],
+    },
+    {
+      id: "openai",
+      name: "OpenAI (GPT-5)",
+      keyPrefix: "sk-",
+      envPrefixed: "MACBOT_OPENAI_API_KEY",
+      envStandard: "OPENAI_API_KEY",
+      models: [
+        { id: "openai/gpt-5.2", name: "GPT-5.2", tag: "Recommended" },
+        { id: "openai/gpt-5.2-pro", name: "GPT-5.2 Pro", tag: "Most capable" },
+        { id: "openai/gpt-5.1", name: "GPT-5.1" },
+        { id: "openai/gpt-5-mini", name: "GPT-5 Mini", tag: "Fast & cheap" },
+        { id: "openai/o4-mini", name: "o4-mini", tag: "Reasoning" },
+      ],
+    },
+    {
+      id: "openrouter",
+      name: "OpenRouter",
+      keyPrefix: "sk-or-",
+      envPrefixed: "MACBOT_OPENROUTER_API_KEY",
+      envStandard: "OPENROUTER_API_KEY",
+      models: [
+        { id: "openrouter/deepseek/deepseek-v3.2-20251201", name: "DeepSeek V3.2", tag: "Recommended" },
+        { id: "openrouter/google/gemini-2.5-flash", name: "Gemini 2.5 Flash", tag: "Fast & cheap" },
+        { id: "openrouter/google/gemini-2.5-pro", name: "Gemini 2.5 Pro" },
+        { id: "openrouter/z-ai/glm-4.7-20251222", name: "GLM 4.7" },
+        { id: "openrouter/meta-llama/llama-4-maverick-17b-128e-instruct", name: "Llama 4 Maverick" },
+        { id: "openrouter/qwen/qwen3-235b-a22b-04-28", name: "Qwen 3 235B" },
+        { id: "openrouter/x-ai/grok-4.1-fast", name: "Grok 4.1 Fast" },
+      ],
+    },
+  ];
+
+  // Settings panel state
+  let settingsProvider = $state("anthropic");
+  let settingsModel = $state("");
+  let settingsApiKey = $state("");
+  let settingsSaving = $state(false);
+  let settingsError = $state<string | null>(null);
+  let settingsSuccess = $state<string | null>(null);
+
+  let paperlessUrl = $state("");
+  let paperlessToken = $state("");
+  let paperlessSaving = $state(false);
+  let paperlessError = $state<string | null>(null);
+  let paperlessSuccess = $state<string | null>(null);
+
+  let needsRestart = $state(false);
+
+  const settingsCurrentProvider = $derived(providers.find((p) => p.id === settingsProvider)!);
+
+  // Set default model when provider changes
+  $effect(() => {
+    const p = providers.find((p) => p.id === settingsProvider);
+    if (p && (!settingsModel || !p.models.some((m) => m.id === settingsModel))) {
+      settingsModel = p.models[0].id;
+    }
+  });
+
+  // Pre-populate settings from config when panel opens or config reloads
+  $effect(() => {
+    if (showSettings && config) {
+      // Detect provider from existing key
+      if (config.MACBOT_ANTHROPIC_API_KEY) {
+        settingsProvider = "anthropic";
+      } else if (config.MACBOT_OPENAI_API_KEY) {
+        settingsProvider = "openai";
+      } else if (config.MACBOT_OPENROUTER_API_KEY) {
+        settingsProvider = "openrouter";
+      }
+
+      // Pre-populate model
+      if (config.MACBOT_MODEL) {
+        const model = config.MACBOT_MODEL;
+        // Find which provider owns this model
+        for (const p of providers) {
+          if (p.models.some((m) => m.id === model)) {
+            settingsProvider = p.id;
+            settingsModel = model;
+            break;
+          }
+        }
+      }
+
+      // Pre-populate Paperless
+      paperlessUrl = config.MACBOT_PAPERLESS_URL ?? "";
+      paperlessToken = config.MACBOT_PAPERLESS_API_TOKEN ?? "";
+    }
+  });
+
+  async function updateConfigKeys(updates: Record<string, string>, removeKeys?: string[]) {
+    const raw = await invoke<string>("read_config");
+    const allRemoveKeys = new Set(removeKeys ?? []);
+    for (const key of Object.keys(updates)) {
+      allRemoveKeys.add(key);
+    }
+
+    const lines = raw.split("\n").filter((line) => {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith("#")) return true;
+      const eqIndex = trimmed.indexOf("=");
+      if (eqIndex <= 0) return true;
+      const key = trimmed.substring(0, eqIndex);
+      return !allRemoveKeys.has(key);
+    });
+
+    for (const [key, value] of Object.entries(updates)) {
+      if (value) {
+        lines.push(`${key}=${value}`);
+      }
+    }
+
+    await invoke("write_config", { content: lines.join("\n") + "\n" });
+    await loadConfig();
+  }
+
+  async function saveAiProvider() {
+    settingsSaving = true;
+    settingsError = null;
+    settingsSuccess = null;
+
+    try {
+      const updates: Record<string, string> = {};
+      const removeKeys: string[] = [
+        "MACBOT_ANTHROPIC_API_KEY", "ANTHROPIC_API_KEY",
+        "MACBOT_OPENAI_API_KEY", "OPENAI_API_KEY",
+        "MACBOT_OPENROUTER_API_KEY", "OPENROUTER_API_KEY",
+        "MACBOT_MODEL", "MODEL",
+      ];
+
+      // Only write API key if user entered a new one
+      if (settingsApiKey.trim()) {
+        updates[settingsCurrentProvider.envPrefixed] = settingsApiKey;
+        updates[settingsCurrentProvider.envStandard] = settingsApiKey;
+      } else {
+        // Keep existing key for the selected provider
+        const existingKey = config[settingsCurrentProvider.envPrefixed];
+        if (existingKey) {
+          updates[settingsCurrentProvider.envPrefixed] = existingKey;
+          updates[settingsCurrentProvider.envStandard] = existingKey;
+        }
+      }
+
+      updates["MACBOT_MODEL"] = settingsModel;
+
+      await updateConfigKeys(updates, removeKeys);
+      settingsApiKey = "";
+      settingsSuccess = "AI provider settings saved";
+      needsRestart = true;
+    } catch (e) {
+      settingsError = `Failed to save: ${e}`;
+    } finally {
+      settingsSaving = false;
+    }
+  }
+
+  async function savePaperless() {
+    paperlessSaving = true;
+    paperlessError = null;
+    paperlessSuccess = null;
+
+    try {
+      const updates: Record<string, string> = {};
+      if (paperlessUrl.trim()) {
+        updates["MACBOT_PAPERLESS_URL"] = paperlessUrl.trim();
+      }
+      if (paperlessToken.trim()) {
+        updates["MACBOT_PAPERLESS_API_TOKEN"] = paperlessToken.trim();
+      }
+
+      const removeKeys = ["MACBOT_PAPERLESS_URL", "MACBOT_PAPERLESS_API_TOKEN"];
+      await updateConfigKeys(updates, removeKeys);
+      paperlessSuccess = "Paperless-ngx settings saved";
+      needsRestart = true;
+    } catch (e) {
+      paperlessError = `Failed to save: ${e}`;
+    } finally {
+      paperlessSaving = false;
     }
   }
 </script>
@@ -389,7 +599,7 @@
 
     <!-- Panel -->
     <div
-      class="absolute right-0 top-0 bottom-0 w-80 bg-bg-card border-l border-border p-6 overflow-y-auto"
+      class="absolute right-0 top-0 bottom-0 w-[480px] bg-bg-card border-l border-border p-6 overflow-y-auto"
     >
       <div class="flex items-center justify-between mb-6">
         <h2 class="text-lg font-bold text-text">Settings</h2>
@@ -402,7 +612,138 @@
         </button>
       </div>
 
+      {#if needsRestart}
+        <div class="flex items-center gap-3 p-3 mb-4 bg-warning/10 border border-warning/30 rounded-xl">
+          <div class="flex-1">
+            <p class="text-sm font-medium text-warning">Restart required</p>
+            <p class="text-xs text-text-muted">Settings were saved. Restart the agent to apply changes.</p>
+          </div>
+          <Button size="sm" onclick={async () => {
+            await chatStore.reconnect();
+            needsRestart = false;
+          }}>
+            <RotateCcw class="w-3.5 h-3.5" />
+            Restart
+          </Button>
+        </div>
+      {/if}
+
       <div class="space-y-6">
+        <!-- AI Provider Section -->
+        <div>
+          <h3 class="text-sm font-medium text-text mb-3">AI Provider</h3>
+
+          <!-- Provider selector -->
+          <div class="mb-3">
+            <label for="settings-provider" class="text-xs text-text-muted mb-1 block">Provider</label>
+            <select
+              id="settings-provider"
+              bind:value={settingsProvider}
+              class="w-full p-2.5 bg-bg-input border border-border rounded-xl text-text text-sm
+                     focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary"
+            >
+              {#each providers as p}
+                <option value={p.id}>{p.name}</option>
+              {/each}
+            </select>
+          </div>
+
+          <!-- Model dropdown -->
+          <div class="mb-3">
+            <label for="settings-model" class="text-xs text-text-muted mb-1 block">Model</label>
+            <select
+              id="settings-model"
+              bind:value={settingsModel}
+              class="w-full p-2.5 bg-bg-input border border-border rounded-xl text-text text-sm
+                     focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary"
+            >
+              {#each settingsCurrentProvider.models as m}
+                <option value={m.id}>
+                  {m.name}{m.tag ? ` — ${m.tag}` : ""}
+                </option>
+              {/each}
+            </select>
+          </div>
+
+          <!-- Current key display -->
+          {#if config[settingsCurrentProvider.envPrefixed]}
+            <div class="mb-3 flex items-center gap-2 text-xs text-text-muted">
+              <Key class="w-3.5 h-3.5" />
+              <span>Current key: <span class="font-mono">{maskApiKey(config[settingsCurrentProvider.envPrefixed])}</span></span>
+            </div>
+          {/if}
+
+          <!-- API key input -->
+          <div class="mb-3">
+            <Input
+              type="password"
+              label="New API Key (leave blank to keep current)"
+              placeholder={settingsCurrentProvider.keyPrefix + "..."}
+              bind:value={settingsApiKey}
+            />
+          </div>
+
+          {#if settingsError}
+            <p class="text-xs text-error mb-2">{settingsError}</p>
+          {/if}
+          {#if settingsSuccess}
+            <p class="text-xs text-success mb-2">{settingsSuccess}</p>
+          {/if}
+
+          <Button size="sm" onclick={saveAiProvider} loading={settingsSaving} disabled={settingsSaving}>
+            <Save class="w-4 h-4" />
+            Save AI Settings
+          </Button>
+        </div>
+
+        <hr class="border-border" />
+
+        <!-- Paperless-ngx Section -->
+        <div>
+          <h3 class="text-sm font-medium text-text mb-3">
+            <span class="flex items-center gap-2">
+              <FileText class="w-4 h-4 text-primary" />
+              Paperless-ngx
+            </span>
+          </h3>
+          <p class="text-xs text-text-muted mb-3">
+            Connect to your Paperless-ngx instance for document management.
+          </p>
+
+          <div class="mb-3">
+            <Input
+              type="url"
+              label="URL"
+              placeholder="http://localhost:8000"
+              bind:value={paperlessUrl}
+            />
+          </div>
+
+          <div class="mb-3">
+            <Input
+              type="password"
+              label="API Token"
+              placeholder="Token ..."
+              bind:value={paperlessToken}
+            />
+          </div>
+
+          {#if paperlessError}
+            <p class="text-xs text-error mb-2">{paperlessError}</p>
+          {/if}
+          {#if paperlessSuccess}
+            <p class="text-xs text-success mb-2">{paperlessSuccess}</p>
+          {/if}
+
+          <Button size="sm" onclick={savePaperless} loading={paperlessSaving} disabled={paperlessSaving}>
+            <Save class="w-4 h-4" />
+            Save Paperless Settings
+          </Button>
+        </div>
+
+        <hr class="border-border" />
+
+        <!-- About -->
         <div>
           <h3 class="text-sm font-medium text-text mb-2">About</h3>
           <p class="text-sm text-text-muted">
@@ -411,6 +752,7 @@
           </p>
         </div>
 
+        <!-- Config file actions -->
         <div>
           <h3 class="text-sm font-medium text-text mb-2">Configuration</h3>
           <p class="text-sm text-text-muted mb-3">Edit settings in ~/.macbot/.env</p>
@@ -432,6 +774,7 @@
           </Button>
         </div>
 
+        <!-- Reset -->
         <div>
           <h3 class="text-sm font-medium text-text mb-2">Reset</h3>
           <p class="text-sm text-text-muted mb-3">Reset onboarding to reconfigure.</p>

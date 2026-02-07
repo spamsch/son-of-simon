@@ -55,7 +55,7 @@ class PaperlessSearchTask(Task):
         if not settings.paperless_url or not settings.paperless_api_token:
             return {
                 "success": False,
-                "error": "Paperless-ngx not configured. Run 'macbot onboard' to set up.",
+                "error": "Paperless-ngx not configured. Set MACBOT_PAPERLESS_URL and MACBOT_PAPERLESS_API_TOKEN in Settings or run 'son onboard'.",
             }
 
         try:
@@ -133,7 +133,7 @@ class PaperlessGetDocumentTask(Task):
         if not settings.paperless_url or not settings.paperless_api_token:
             return {
                 "success": False,
-                "error": "Paperless-ngx not configured. Run 'macbot onboard' to set up.",
+                "error": "Paperless-ngx not configured. Set MACBOT_PAPERLESS_URL and MACBOT_PAPERLESS_API_TOKEN in Settings or run 'son onboard'.",
             }
 
         try:
@@ -225,7 +225,7 @@ class PaperlessUploadTask(Task):
         if not settings.paperless_url or not settings.paperless_api_token:
             return {
                 "success": False,
-                "error": "Paperless-ngx not configured. Run 'macbot onboard' to set up.",
+                "error": "Paperless-ngx not configured. Set MACBOT_PAPERLESS_URL and MACBOT_PAPERLESS_API_TOKEN in Settings or run 'son onboard'.",
             }
 
         path = Path(file_path).expanduser()
@@ -315,7 +315,7 @@ class PaperlessDownloadTask(Task):
         if not settings.paperless_url or not settings.paperless_api_token:
             return {
                 "success": False,
-                "error": "Paperless-ngx not configured. Run 'macbot onboard' to set up.",
+                "error": "Paperless-ngx not configured. Set MACBOT_PAPERLESS_URL and MACBOT_PAPERLESS_API_TOKEN in Settings or run 'son onboard'.",
             }
 
         try:
@@ -399,7 +399,7 @@ class PaperlessListTagsTask(Task):
         if not settings.paperless_url or not settings.paperless_api_token:
             return {
                 "success": False,
-                "error": "Paperless-ngx not configured. Run 'macbot onboard' to set up.",
+                "error": "Paperless-ngx not configured. Set MACBOT_PAPERLESS_URL and MACBOT_PAPERLESS_API_TOKEN in Settings or run 'son onboard'.",
             }
 
         try:
@@ -463,7 +463,7 @@ class PaperlessListCorrespondentsTask(Task):
         if not settings.paperless_url or not settings.paperless_api_token:
             return {
                 "success": False,
-                "error": "Paperless-ngx not configured. Run 'macbot onboard' to set up.",
+                "error": "Paperless-ngx not configured. Set MACBOT_PAPERLESS_URL and MACBOT_PAPERLESS_API_TOKEN in Settings or run 'son onboard'.",
             }
 
         try:
@@ -526,7 +526,7 @@ class PaperlessListDocumentTypesTask(Task):
         if not settings.paperless_url or not settings.paperless_api_token:
             return {
                 "success": False,
-                "error": "Paperless-ngx not configured. Run 'macbot onboard' to set up.",
+                "error": "Paperless-ngx not configured. Set MACBOT_PAPERLESS_URL and MACBOT_PAPERLESS_API_TOKEN in Settings or run 'son onboard'.",
             }
 
         try:
