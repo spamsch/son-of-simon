@@ -295,8 +295,9 @@ class SkillsRegistry:
         if not enabled:
             return ""
 
-        lines = ["\n## Available Skills\n"]
-        lines.append("The following skills provide guidance for handling specific requests:\n")
+        lines = ["\n## Capabilities & Skills\n"]
+        lines.append("You have the following capabilities. Each one is a built-in feature you can use. "
+                      "When listing your capabilities to the user, include ALL of these:\n")
 
         for skill in sorted(enabled, key=lambda s: s.name):
             lines.append(skill.format_for_prompt(task_registry))
