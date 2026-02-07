@@ -8,8 +8,6 @@
   <em>Your personal Mac assistant. Built-in apps. Voice messages. Secure by default. No setup headaches.</em>
 </p>
 
----
-
 ## Why
 
 Your Mac is already set up. Why should an AI make you do it again with OAuth and gateways?
