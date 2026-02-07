@@ -7,6 +7,7 @@ import asyncio
 import logging
 import os
 import signal
+from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
 
@@ -70,17 +71,23 @@ def stop_service() -> bool:
 class MacbotService:
     """Unified service that runs cron jobs and listens for Telegram messages."""
 
-    def __init__(self):
-        """Initialize the service."""
+    def __init__(self, stderr_console: bool = False):
+        """Initialize the service.
+
+        Args:
+            stderr_console: If True, Rich console output goes to stderr
+                           (keeps stdout clean for JSON-lines protocol in foreground mode).
+        """
         from rich.console import Console
         self.registry = create_default_registry()
         self.agent = Agent(self.registry)  # Default agent for cron jobs
         self._chat_agents: dict[str, Agent] = {}  # Per-chat agents for Telegram conversations
-        self._console = Console()
+        self._console = Console(stderr=True) if stderr_console else Console()
         self.cron_service: CronService | None = None
         self.telegram_service = None
         self._running = False
         self._tasks: list[asyncio.Task] = []
+        self._emit: Callable | None = None
 
     def reload_skills(self) -> None:
         """Reload skills from disk for all agents.
@@ -143,7 +150,7 @@ class MacbotService:
             settings.telegram_chat_id = chat_id
             self.telegram_service.default_chat_id = chat_id
 
-            print(f"  ✓ Auto-saved Telegram chat ID: {chat_id}")
+            self._console.print(f"  ✓ Auto-saved Telegram chat ID: {chat_id}")
             logger.info(f"Auto-saved MACBOT_TELEGRAM_CHAT_ID={chat_id}")
         except Exception as e:
             logger.error(f"Failed to auto-save chat ID: {e}")
@@ -187,7 +194,7 @@ class MacbotService:
             try:
                 timestamp = datetime.now().strftime("%H:%M:%S")
                 # Show cron job in console
-                print(f"\n[{timestamp}] ⏰ Cron: {payload.message[:100]}{'...' if len(payload.message) > 100 else ''}")
+                self._console.print(f"\n[{timestamp}] ⏰ Cron: {payload.message[:100]}{'...' if len(payload.message) > 100 else ''}")
                 logger.info(f"Cron: Running '{payload.message[:50]}...'")
                 result = await self.agent.run(payload.message, stream=False)
                 logger.info(f"Cron: Completed, result length: {len(result)}")
@@ -220,8 +227,12 @@ class MacbotService:
             from datetime import datetime
             timestamp = datetime.now().strftime("%H:%M:%S")
             # Show incoming message in console
-            print(f"\n[{timestamp}] 📩 Telegram: {text[:100]}{'...' if len(text) > 100 else ''}")
+            self._console.print(f"\n[{timestamp}] 📩 Telegram: {text[:100]}{'...' if len(text) > 100 else ''}")
             logger.info(f"Telegram: Message from {chat_id}: {text[:50]}...")
+
+            # Emit incoming message to GUI
+            if self._emit:
+                self._emit({"type": "telegram_message", "text": text, "chat_id": chat_id, "direction": "incoming"})
 
             # Auto-detect chat ID if not configured
             if not settings.telegram_chat_id:
@@ -231,7 +242,10 @@ class MacbotService:
             if text.strip().lower() in ("/reset", "/clear", "/new"):
                 if chat_id in self._chat_agents:
                     self._chat_agents[chat_id].reset()
-                return "Conversation cleared. Starting fresh!"
+                reply = "Conversation cleared. Starting fresh!"
+                if self._emit:
+                    self._emit({"type": "telegram_message", "text": reply, "chat_id": chat_id, "direction": "outgoing"})
+                return reply
 
             # Send acknowledgment
             await self.telegram_service.send_message("⏳ Working on it...", chat_id, parse_mode=None)
@@ -244,7 +258,7 @@ class MacbotService:
                 tools_called = []
                 original_execute = agent._execute_tool_calls
 
-                async def tracking_execute(response, verbose=False):
+                async def tracking_execute(response, verbose=False, **kwargs):
                     for tc in response.tool_calls:
                         tools_called.append(tc.name)
                         # Send progress update every few tools
@@ -256,14 +270,21 @@ class MacbotService:
                             await self.telegram_service.send_message(
                                 f"🔧 `{tc.name}` ({len(tools_called)} steps)...", chat_id, parse_mode="Markdown"
                             )
-                    return await original_execute(response, verbose)
+                    return await original_execute(response, verbose, **kwargs)
 
                 agent._execute_tool_calls = tracking_execute
 
-                result = await agent.run(text, stream=False, continue_conversation=True)
+                result = await agent.run(
+                    text, stream=False, continue_conversation=True,
+                    on_event=self._emit,
+                )
 
                 # Restore original method
                 agent._execute_tool_calls = original_execute
+
+                # Emit outgoing response to GUI
+                if self._emit:
+                    self._emit({"type": "telegram_message", "text": result, "chat_id": chat_id, "direction": "outgoing"})
 
                 # Show response in terminal as rendered markdown
                 from rich.markdown import Markdown
@@ -280,7 +301,10 @@ class MacbotService:
                 return result
             except Exception as e:
                 logger.error(f"Telegram: Error - {e}")
-                return f"Error: {e}"
+                error_msg = f"Error: {e}"
+                if self._emit:
+                    self._emit({"type": "telegram_message", "text": error_msg, "chat_id": chat_id, "direction": "outgoing"})
+                return error_msg
 
         self.telegram_service.set_message_handler(message_handler)
         return True
@@ -327,10 +351,10 @@ class MacbotService:
                     content = ""
 
                 if not content:
-                    print(f"[{timestamp}] heartbeat")
+                    self._console.print(f"[{timestamp}] heartbeat")
                     continue
 
-                print(f"\n[{timestamp}] 💓 Heartbeat: {content[:100]}{'...' if len(content) > 100 else ''}")
+                self._console.print(f"\n[{timestamp}] 💓 Heartbeat: {content[:100]}{'...' if len(content) > 100 else ''}")
                 logger.info(f"Heartbeat: Running '{content[:50]}...'")
                 result = await self.agent.run(content, stream=False)
                 logger.info(f"Heartbeat: Completed, result length: {len(result)}")
@@ -355,7 +379,7 @@ class MacbotService:
                 return
             except Exception as e:
                 logger.error(f"Heartbeat: Error - {e}")
-                print(f"[{timestamp}] 💓 Heartbeat error: {e}")
+                self._console.print(f"[{timestamp}] 💓 Heartbeat error: {e}")
 
     def _format_tokens(self, count: int) -> str:
         """Format token count with K suffix for thousands."""
@@ -364,7 +388,17 @@ class MacbotService:
         return str(count)
 
     async def _run_stdin_reader(self) -> None:
-        """Run stdin reader for GUI/foreground mode (non-interactive)."""
+        """Run stdin reader for GUI/foreground mode using JSON-lines protocol.
+
+        Input (stdin):  {"type": "message", "text": "..."}
+        Output (stdout): {"type": "ready"}
+                         {"type": "tool_call", "name": "...", "arguments": {...}}
+                         {"type": "tool_result", "success": true/false, ...}
+                         {"type": "chunk", "text": "..."}
+                         {"type": "done"}
+                         {"type": "error", "text": "..."}
+        """
+        import json
         import sys
         from concurrent.futures import ThreadPoolExecutor
 
@@ -377,53 +411,58 @@ class MacbotService:
         else:
             agent = self.agent
 
+        def _emit(obj: dict) -> None:
+            sys.stdout.write(json.dumps(obj) + "\n")
+            sys.stdout.flush()
+
+        self._emit = _emit
+
         def read_line():
             try:
                 return sys.stdin.readline()
             except Exception:
                 return None
 
-        def output(msg: str):
-            """Print and flush immediately for GUI to receive."""
-            print(msg, flush=True)
+        _emit({"type": "ready"})
 
         while self._running:
             try:
-                # Read line from stdin in a thread to not block the event loop
-                line = await loop.run_in_executor(executor, read_line)
+                raw = await loop.run_in_executor(executor, read_line)
 
-                if line is None or line == "":
-                    # EOF or error
+                if raw is None or raw == "":
+                    # EOF — stdin closed
                     await asyncio.sleep(0.1)
                     continue
 
-                user_input = line.strip()
-                if not user_input:
+                raw = raw.strip()
+                if not raw:
                     continue
-
-                if user_input.lower() in ("quit", "exit", "q"):
-                    output("[Stopping service...]")
-                    await self.stop()
-                    break
-
-                if user_input.lower() == "clear":
-                    agent.reset()
-                    output("[Conversation cleared]")
-                    continue
-
-                # Process query through shared agent
-                timestamp = datetime.now().strftime("%H:%M:%S")
-                output(f"[{timestamp}] Processing: {user_input[:50]}{'...' if len(user_input) > 50 else ''}")
 
                 try:
-                    result = await agent.run(user_input, stream=False, continue_conversation=True)
+                    msg = json.loads(raw)
+                except json.JSONDecodeError:
+                    _emit({"type": "error", "text": "Invalid JSON input"})
+                    continue
 
-                    # Output the response
-                    output(f"\n[{timestamp}] Response:")
-                    output(result)
-                    output("-" * 60 + "\n")
+                if msg.get("type") != "message":
+                    _emit({"type": "error", "text": f"Unknown message type: {msg.get('type')}"})
+                    continue
+
+                text = msg.get("text", "").strip()
+                if not text:
+                    _emit({"type": "error", "text": "Empty message"})
+                    continue
+
+                try:
+                    result = await agent.run(
+                        text, stream=False,
+                        continue_conversation=True, on_event=_emit,
+                    )
+                    _emit({"type": "chunk", "text": result})
                 except Exception as e:
-                    output(f"[{timestamp}] Error: {e}\n")
+                    _emit({"type": "error", "text": str(e)})
+
+                _emit({"type": "done"})
 
             except EOFError:
                 break
@@ -645,10 +684,11 @@ def run_service(daemon: bool = False, verbose: bool = False, foreground: bool = 
         foreground: Whether to run in foreground without interactive console (for GUI)
     """
     from rich.console import Console
-    console = Console()
+    # In foreground mode, use stderr for all Rich output to keep stdout clean for JSON-lines
+    console = Console(stderr=True) if foreground else Console()
 
     # Check what's available
-    service = MacbotService()
+    service = MacbotService(stderr_console=foreground)
     status = service.get_status()
 
     has_cron = status["cron"]["enabled"]
@@ -695,21 +735,32 @@ def run_service(daemon: bool = False, verbose: bool = False, foreground: bool = 
         # Foreground mode
         if foreground:
             # Non-interactive foreground mode (for GUI integration)
-            # Set up simple logging to stdout
+            # Use stderr for Rich output so stdout stays clean for JSON-lines protocol
+            from rich.console import Console as RichConsole
+            stderr_console = RichConsole(stderr=True)
+
             logging.basicConfig(
                 level=logging.INFO if verbose else logging.WARNING,
                 format="%(asctime)s %(message)s",
                 datefmt="%H:%M:%S",
+                stream=__import__("sys").stderr,
             )
-            console.print("[green]✓[/green] Ready! You can now send commands.")
+
+            # Write PID file as safety net for cleanup
+            MACBOT_DIR.mkdir(parents=True, exist_ok=True)
+            PID_FILE.write_text(str(os.getpid()))
+
+            stderr_console.print("[green]✓[/green] Ready! You can now send commands.")
 
             try:
-                # Enable stdin reader so GUI can send queries
+                # Enable stdin reader so GUI can send queries via JSON-lines
                 asyncio.run(service.start(interactive=False, stdin_reader=True))
             except KeyboardInterrupt:
-                console.print("\n[dim]Stopping...[/dim]")
+                stderr_console.print("\n[dim]Stopping...[/dim]")
                 asyncio.run(service.stop())
-            console.print("[dim]Service stopped.[/dim]")
+            finally:
+                PID_FILE.unlink(missing_ok=True)
+            stderr_console.print("[dim]Service stopped.[/dim]")
         else:
             # Interactive mode with input prompt
             console.print("[dim]Type queries below, or 'quit' to exit. Ctrl+C also stops.[/dim]")
