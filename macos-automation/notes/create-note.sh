@@ -82,10 +82,9 @@ BODY_ESCAPED=$(escape_for_applescript "$BODY")
 if [[ "$HTML" == "false" ]]; then
     # Convert plain text to basic HTML
     # Replace newlines with <br> and wrap in div
-    BODY_HTML="<div><h1>$TITLE_ESCAPED</h1></div>"
-    # Convert newlines to <br> for the body
+    # Convert newlines to <br> for the body (title is set via name property)
     BODY_WITH_BR=$(echo "$BODY_ESCAPED" | sed 's/$/\\n/' | tr -d '\n' | sed 's/\\n$//;s/\\n/<br>/g')
-    BODY_HTML="$BODY_HTML<div>$BODY_WITH_BR</div>"
+    BODY_HTML="<div>$BODY_WITH_BR</div>"
 else
     BODY_HTML="$BODY_ESCAPED"
 fi
