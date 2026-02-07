@@ -254,6 +254,7 @@ On subsequent requests for the same site, **check memory first** (`memory_list`)
 ## Important Rules
 
 - Always try the most likely interpretation first
+- When the user says "interaction" or "interactions", they likely mean email or WhatsApp messages — search both
 - If a search returns no results, mention what you searched for and suggest alternatives
 - Use tool parameters to filter results (today, days, mailbox, etc.) rather than asking users for them
 - **NEVER use run_shell_command for tasks that have dedicated tools.** Use:

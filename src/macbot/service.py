@@ -384,6 +384,74 @@ class MacbotService:
             return f"{count / 1000:.1f}K"
         return str(count)
 
+    def _print_context(self, agent: Agent, console: "Console") -> None:
+        """Print a formatted overview of the current agent context."""
+        from rich.panel import Panel
+        from rich.table import Table
+        from rich.tree import Tree
+
+        stats = agent.get_token_stats()
+
+        # Build context tree
+        tree = Tree("[bold]Agent Context[/bold]")
+
+        # Model & provider
+        model_branch = tree.add("[bold cyan]Model[/bold cyan]")
+        model_branch.add(f"{agent.config.get_model()}")
+
+        # Token stats
+        tokens_branch = tree.add("[bold cyan]Tokens[/bold cyan]")
+        tokens_branch.add(f"Context: {stats['context_tokens']:,}")
+        tokens_branch.add(f"Session: {stats['session_total_tokens']:,} (in: {stats['session_input_tokens']:,}, out: {stats['session_output_tokens']:,})")
+
+        # Conversation messages
+        msg_branch = tree.add(f"[bold cyan]Messages[/bold cyan] ({stats['message_count']})")
+        for msg in agent.messages:
+            role = msg.role
+            if role == "user":
+                preview = (msg.content or "")[:80]
+                msg_branch.add(f"[green]user[/green]: {preview}{'...' if len(msg.content or '') > 80 else ''}")
+            elif role == "assistant":
+                if msg.tool_calls:
+                    tools = ", ".join(tc.name for tc in msg.tool_calls)
+                    msg_branch.add(f"[blue]assistant[/blue]: [dim]tool calls:[/dim] {tools}")
+                else:
+                    preview = (msg.content or "")[:80]
+                    msg_branch.add(f"[blue]assistant[/blue]: {preview}{'...' if len(msg.content or '') > 80 else ''}")
+            elif role == "tool":
+                preview = (msg.content or "")[:60]
+                msg_branch.add(f"[yellow]tool[/yellow]: {preview}{'...' if len(msg.content or '') > 60 else ''}")
+
+        # Skills
+        enabled_skills = agent.skills_registry.list_enabled_skills()
+        skills_branch = tree.add(f"[bold cyan]Skills[/bold cyan] ({len(enabled_skills)} enabled)")
+        for skill in sorted(enabled_skills, key=lambda s: s.name):
+            skill_node = skills_branch.add(f"[green]{skill.name}[/green] [dim]({skill.id})[/dim]")
+            if skill.tasks:
+                skill_node.add(f"[dim]Tools: {', '.join(skill.tasks)}[/dim]")
+            if skill.apps:
+                skill_node.add(f"[dim]Apps: {', '.join(skill.apps)}[/dim]")
+
+        # Tools (from task registry)
+        all_tasks = list(agent.task_registry._tasks.keys())
+        tools_branch = tree.add(f"[bold cyan]Tools[/bold cyan] ({len(all_tasks)} registered)")
+        # Group by prefix
+        groups: dict[str, list[str]] = {}
+        for t in sorted(all_tasks):
+            prefix = t.split("_")[0] if "_" in t else t
+            groups.setdefault(prefix, []).append(t)
+        for prefix, tasks in sorted(groups.items()):
+            if len(tasks) == 1:
+                tools_branch.add(f"[dim]{tasks[0]}[/dim]")
+            else:
+                group_node = tools_branch.add(f"[dim]{prefix}[/dim] ({len(tasks)})")
+                for t in tasks:
+                    group_node.add(f"[dim]{t}[/dim]")
+
+        console.print()
+        console.print(tree)
+        console.print()
+
     async def _run_stdin_reader(self) -> None:
         """Run stdin reader for GUI/foreground mode using JSON-lines protocol.
 
@@ -498,7 +566,7 @@ class MacbotService:
             agent = self.agent
 
         console.print("[dim][Ready for input - type a query or 'quit' to exit][/dim]")
-        console.print("[dim][Commands: 'clear' resets conversation, 'stats' shows token usage][/dim]\n")
+        console.print("[dim][Commands: 'clear' resets conversation, 'stats' shows tokens, 'context' shows structure][/dim]\n")
 
         while self._running:
             try:
@@ -544,6 +612,10 @@ class MacbotService:
                     console.print(f"  Session input:   {stats['session_input_tokens']:,} tokens")
                     console.print(f"  Session output:  {stats['session_output_tokens']:,} tokens")
                     console.print(f"  Session total:   {stats['session_total_tokens']:,} tokens\n")
+                    continue
+
+                if user_input.lower() == "context":
+                    self._print_context(agent, console)
                     continue
 
                 # Process query through shared agent (cancellable with Escape)
