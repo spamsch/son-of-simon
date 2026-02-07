@@ -1,7 +1,8 @@
 <script lang="ts">
   import { Button } from "$lib/components/ui";
   import { SkillsList, SkillDetail, SkillEditor } from "$lib/components/skills";
-  import { serviceStore } from "$lib/stores/service.svelte";
+  import ChatPanel from "$lib/components/ChatPanel.svelte";
+  import { chatStore } from "$lib/stores/chat.svelte";
   import { onboardingStore } from "$lib/stores/onboarding.svelte";
   import { skillsStore, type Skill } from "$lib/stores/skills.svelte";
   import { memoryStore } from "$lib/stores/memory.svelte";
@@ -12,41 +13,41 @@
   import { homeDir, join } from "@tauri-apps/api/path";
   import { onMount } from "svelte";
   import {
-    Play,
-    Square,
     Settings,
     Key,
     Bot,
     MessageSquare,
     FolderOpen,
     RefreshCw,
-    Info,
-    Terminal,
-    ExternalLink,
     Zap,
     Brain,
     Heart,
-    Stethoscope,
+    MessageCircle,
+    Shield,
+    Check,
+    X,
+    RotateCcw,
   } from "lucide-svelte";
 
   let showSettings = $state(false);
   let showSkills = $state(false);
   let showMemory = $state(false);
   let showHeartbeat = $state(false);
+  let showChat = $state(false);
   let selectedSkill = $state<Skill | null>(null);
   let editingSkill = $state<Skill | null>(null);
   let config = $state<Record<string, string>>({});
   let loading = $state(true);
-  let starting = $state(false);
-  let stopping = $state(false);
   let error = $state<string | null>(null);
-  let verbose = $state(false);
-  let runningDoctor = $state(false);
   let appVersion = $state("0.0.0");
 
   onMount(async () => {
     await loadConfig();
     appVersion = await getVersion();
+    // Auto-start the service
+    chatStore.connect();
+    // Check permissions in background
+    chatStore.checkPermissions().catch(() => {});
   });
 
   async function loadConfig() {
@@ -74,42 +75,6 @@
     }
   }
 
-  async function handleStart() {
-    starting = true;
-    error = null;
-    try {
-      await serviceStore.start(verbose);
-    } catch (e) {
-      error = `Failed to start: ${e}`;
-    } finally {
-      starting = false;
-    }
-  }
-
-  async function handleStop() {
-    stopping = true;
-    error = null;
-    try {
-      await serviceStore.stop();
-    } catch (e) {
-      error = `Failed to stop: ${e}`;
-    } finally {
-      stopping = false;
-    }
-  }
-
-  async function handleDoctor() {
-    runningDoctor = true;
-    error = null;
-    try {
-      await serviceStore.runDoctor();
-    } catch (e) {
-      error = `Failed to run doctor: ${e}`;
-    } finally {
-      runningDoctor = false;
-    }
-  }
-
   function toggleSettings() {
     showSettings = !showSettings;
   }
@@ -132,6 +97,10 @@
     if (showHeartbeat) {
       heartbeatStore.load();
     }
+  }
+
+  function toggleChat() {
+    showChat = !showChat;
   }
 
   function handleSkillSelect(skill: Skill) {
@@ -177,7 +146,7 @@
 
   function getModelDisplay(model: string): string {
     if (model.startsWith("openrouter/")) {
-      // e.g. "openrouter/deepseek/deepseek-v3.2-20251201" → "OpenRouter (deepseek-v3.2-20251201)"
+      // e.g. "openrouter/deepseek/deepseek-v3.2-20251201" -> "OpenRouter (deepseek-v3.2-20251201)"
       const parts = model.split("/");
       return `OpenRouter (${parts[parts.length - 1]})`;
     }
@@ -198,6 +167,33 @@
     const folderPath = await join(home, ".macbot");
     const command = Command.create("exec-sh", ["-c", `open "${folderPath}"`]);
     await command.execute();
+  }
+
+  function statusColor(state: typeof chatStore.connectionState): string {
+    switch (state) {
+      case "connected": return "bg-success";
+      case "connecting": return "bg-warning animate-pulse";
+      case "disconnected": return "bg-text-muted";
+      case "error": return "bg-error";
+    }
+  }
+
+  function statusLabel(state: typeof chatStore.connectionState): string {
+    switch (state) {
+      case "connected": return "Running";
+      case "connecting": return "Starting...";
+      case "disconnected": return "Stopped";
+      case "error": return "Error";
+    }
+  }
+
+  function statusTextColor(state: typeof chatStore.connectionState): string {
+    switch (state) {
+      case "connected": return "text-success";
+      case "connecting": return "text-warning";
+      case "disconnected": return "text-text-muted";
+      case "error": return "text-error";
+    }
   }
 </script>
 
@@ -260,96 +256,63 @@
             </p>
           </div>
         </div>
-      {/if}
-    </div>
 
-    <!-- Status and Controls -->
-    <div class="flex flex-col items-center gap-4">
-      <!-- Status Indicator -->
-      <div class="flex items-center gap-2">
-        <div
-          class="w-3 h-3 rounded-full {serviceStore.running ? 'bg-success animate-pulse' : 'bg-text-muted'}"
-        ></div>
-        <span class="text-sm font-medium {serviceStore.running ? 'text-success' : 'text-text-muted'}">
-          {serviceStore.running ? "Running" : "Stopped"}
-        </span>
-      </div>
-
-      <!-- Action Buttons -->
-      {#if serviceStore.running}
-        <!-- Running info -->
-        <div class="flex flex-col items-center gap-4 p-4 bg-bg-card rounded-xl border border-border max-w-md">
-          <p class="text-sm text-text-muted text-center">
-            Son of Simon is running! You can now:
-          </p>
-          <ul class="text-sm text-text-muted space-y-1">
-            <li class="flex items-center gap-2">
-              <Terminal class="w-4 h-4 text-primary" />
-              Type commands in the Terminal window
-            </li>
-            {#if config.MACBOT_TELEGRAM_BOT_TOKEN}
-              <li class="flex items-center gap-2">
-                <MessageSquare class="w-4 h-4 text-primary" />
-                Send messages to your Telegram bot
-              </li>
+        <!-- App Permissions -->
+        <div class="flex items-center gap-3 p-3 bg-bg-card rounded-xl border border-border">
+          <Shield class="w-5 h-5 text-primary" />
+          <div class="flex-1">
+            <p class="text-xs text-text-muted">App Permissions</p>
+            {#if chatStore.checkingPermissions}
+              <p class="text-sm font-medium text-text-muted">Checking...</p>
+            {:else if chatStore.permissions}
+              {@const perms = chatStore.permissions}
+              {@const apps = ["Mail", "Calendar", "Reminders", "Notes", "Safari"] as const}
+              {@const denied = apps.filter(a => !perms[a])}
+              {#if denied.length === 0}
+                <p class="text-sm font-medium text-success">All granted</p>
+              {:else}
+                <div class="flex flex-wrap gap-1.5 mt-1">
+                  {#each apps as app}
+                    <span class="inline-flex items-center gap-0.5 text-xs px-1.5 py-0.5 rounded-md {perms[app] ? 'bg-success/10 text-success' : 'bg-error/10 text-error'}">
+                      {#if perms[app]}
+                        <Check class="w-3 h-3" />
+                      {:else}
+                        <X class="w-3 h-3" />
+                      {/if}
+                      {app}
+                    </span>
+                  {/each}
+                </div>
+              {/if}
+            {:else}
+              <button
+                type="button"
+                class="text-sm font-medium text-primary hover:underline"
+                onclick={() => chatStore.checkPermissions()}
+              >
+                Check permissions
+              </button>
             {/if}
-          </ul>
-
-          <div class="w-full border-t border-border pt-3">
-            <p class="text-xs text-text-muted mb-2 font-medium">Try saying:</p>
-            <div class="flex flex-wrap gap-2">
-              <span class="text-xs bg-bg-input px-2 py-1 rounded-lg text-text-muted">"Check my emails"</span>
-              <span class="text-xs bg-bg-input px-2 py-1 rounded-lg text-text-muted">"What's on my calendar?"</span>
-              <span class="text-xs bg-bg-input px-2 py-1 rounded-lg text-text-muted">"Remind me to call mom at 5pm"</span>
-              <span class="text-xs bg-bg-input px-2 py-1 rounded-lg text-text-muted">"Search the web for..."</span>
-            </div>
           </div>
-        </div>
-
-        <div class="flex gap-3">
-          <Button variant="secondary" onclick={() => serviceStore.showTerminal()}>
-            <ExternalLink class="w-4 h-4" />
-            Show Terminal
-          </Button>
-          <Button variant="danger" onclick={handleStop} loading={stopping} disabled={stopping}>
-            <Square class="w-4 h-4" />
-            Stop
-          </Button>
-        </div>
-      {:else}
-        <div class="flex gap-3">
-          <Button onclick={handleStart} loading={starting} disabled={starting} size="lg">
-            <Play class="w-5 h-5" />
-            Start Now
-          </Button>
-          <Button variant="secondary" onclick={handleDoctor} loading={runningDoctor} disabled={runningDoctor} size="lg">
-            <Stethoscope class="w-5 h-5" />
-            Doctor
-          </Button>
-        </div>
-
-        <!-- Verbose Checkbox -->
-        <label class="flex items-center gap-2 cursor-pointer">
-          <input
-            type="checkbox"
-            bind:checked={verbose}
-            class="w-4 h-4 rounded border-border text-primary focus:ring-primary"
-          />
-          <span class="text-sm text-text-muted">Verbose logging</span>
-        </label>
-      {/if}
-
-      <!-- Permission Note -->
-      {#if !serviceStore.running}
-        <div class="flex items-start gap-2 p-4 bg-bg-card rounded-xl border border-border max-w-md mt-2">
-          <Info class="w-5 h-5 text-primary shrink-0 mt-0.5" />
-          <p class="text-sm text-text-muted">
-            After starting, macOS will ask for permission to access Calendar, Mail, Reminders, and
-            other apps. Please allow access for full functionality.
-          </p>
+          {#if chatStore.permissions && Object.values(chatStore.permissions).some(v => !v)}
+            <button
+              type="button"
+              class="text-xs text-primary hover:underline shrink-0"
+              onclick={() => chatStore.checkPermissions()}
+              title="Re-check (triggers macOS permission prompts for missing apps)"
+            >
+              Re-check
+            </button>
+          {/if}
         </div>
       {/if}
     </div>
+
+    {#if chatStore.error}
+      <div class="p-4 bg-error/10 border border-error/30 rounded-xl text-error text-sm max-w-md">
+        {chatStore.error}
+      </div>
+    {/if}
 
     {#if error}
       <div class="p-4 bg-error/10 border border-error/30 rounded-xl text-error text-sm max-w-md">
@@ -357,8 +320,41 @@
       </div>
     {/if}
 
-    <!-- Action Buttons -->
-    <div class="flex gap-3">
+    <!-- Chat + Status -->
+    <div class="flex items-center gap-3">
+      <Button variant="primary" size="sm" onclick={toggleChat}>
+        <MessageCircle class="w-4 h-4" />
+        Chat
+      </Button>
+
+      <!-- Status Pill / Reconnect Button -->
+      {#if chatStore.connectionState === "error" || chatStore.connectionState === "disconnected"}
+        <button
+          type="button"
+          class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border transition-colors
+            {chatStore.connectionState === 'error'
+              ? 'border-error/30 bg-error/10 text-error hover:bg-error/20'
+              : 'border-border bg-bg-card text-text-muted hover:bg-bg-input'}"
+          onclick={() => chatStore.reconnect()}
+        >
+          <RotateCcw class="w-3 h-3" />
+          Reconnect
+        </button>
+      {:else}
+        <span
+          class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border
+            {chatStore.connectionState === 'connected'
+              ? 'border-success/30 bg-success/10 text-success'
+              : 'border-warning/30 bg-warning/10 text-warning'}"
+        >
+          <span class="w-1.5 h-1.5 rounded-full {statusColor(chatStore.connectionState)}"></span>
+          {statusLabel(chatStore.connectionState)}
+        </span>
+      {/if}
+    </div>
+
+    <!-- Settings actions -->
+    <div class="flex items-center gap-2">
       <Button variant="ghost" size="sm" onclick={toggleSkills}>
         <Zap class="w-4 h-4" />
         Skills
@@ -685,3 +681,6 @@ Be concise. Skip anything that's purely informational with no action required.`)
     </div>
   </div>
 {/if}
+
+<!-- Chat Panel -->
+<ChatPanel visible={showChat} onclose={toggleChat} />
