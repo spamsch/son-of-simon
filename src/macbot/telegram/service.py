@@ -148,6 +148,69 @@ class TelegramService:
             logger.exception(f"Error transcribing voice message: {e}")
             return None
 
+    async def _summarize_for_voice(self, text: str) -> str:
+        """Summarize a response into 1-2 sentences for TTS.
+
+        Args:
+            text: Full agent response text
+
+        Returns:
+            Short conversational summary
+        """
+        from macbot.config import settings
+        from macbot.providers.base import Message
+        from macbot.providers.litellm_provider import LiteLLMProvider
+
+        model = settings.get_model()
+        api_key = settings.get_api_key_for_model(model)
+        provider = LiteLLMProvider(model=model, api_key=api_key)
+
+        response = await provider.chat(
+            messages=[Message(role="user", content=text)],
+            system_prompt=(
+                "Summarize this assistant response in 1-2 short conversational "
+                "sentences, as if speaking to someone. Be concise and natural."
+            ),
+        )
+        return response.content or text[:200]
+
+    async def _text_to_voice(self, text: str) -> bytes:
+        """Convert text to OGG Opus audio using OpenAI TTS.
+
+        Args:
+            text: Text to synthesize
+
+        Returns:
+            OGG Opus audio bytes
+        """
+        from openai import AsyncOpenAI
+        from macbot.config import settings
+
+        client = AsyncOpenAI(api_key=settings.openai_api_key)
+        response = await client.audio.speech.create(
+            model="tts-1",
+            voice="shimmer",
+            input=text,
+            response_format="opus",
+        )
+        return response.content
+
+    async def _send_voice_reply(self, response: str, chat_id: str) -> None:
+        """Summarize a response and send it as a voice message.
+
+        Failures are logged but never block the text response.
+
+        Args:
+            response: Full agent response text
+            chat_id: Telegram chat ID to send to
+        """
+        try:
+            summary = await self._summarize_for_voice(response)
+            audio = await self._text_to_voice(summary)
+            await self.bot.send_voice(chat_id, audio)
+        except Exception as e:
+            logger.warning(f"Voice reply failed (non-fatal): {e}")
+
     async def _process_update(self, update: Update) -> None:
         """Process a single update from Telegram.
 
@@ -160,6 +223,9 @@ class TelegramService:
         message = update.message
         user_id = message.from_user.id if message.from_user else None
         chat_id = str(message.chat_id)
+
+        # Track whether original message was voice/audio
+        is_voice = bool(message.voice or message.audio)
 
         # Handle voice messages (voice notes) and audio files
         if message.voice:
@@ -216,6 +282,13 @@ class TelegramService:
                     chat_id,
                     parse_mode=None,
                 )
+                return
+
+            # Send voice reply for voice/audio messages
+            if is_voice and response:
+                from macbot.config import settings
+                if settings.openai_api_key:
+                    await self._send_voice_reply(response, chat_id)
         else:
             logger.warning("No message handler configured")
 

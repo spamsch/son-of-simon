@@ -84,6 +84,32 @@ class TelegramBot:
         )
         return True
 
+    async def send_voice(
+        self,
+        chat_id: str | int,
+        voice: bytes,
+        caption: str | None = None,
+    ) -> bool:
+        """Send a voice message to a chat.
+
+        Args:
+            chat_id: Telegram chat ID to send to
+            voice: OGG Opus audio bytes
+            caption: Optional caption for the voice message
+
+        Returns:
+            True if voice message was sent successfully
+
+        Raises:
+            TelegramError: If the API call fails
+        """
+        await self._bot.send_voice(
+            chat_id=chat_id,
+            voice=voice,
+            caption=caption,
+        )
+        return True
+
     async def get_updates(
         self,
         offset: int | None = None,
