@@ -16,6 +16,8 @@
   let apiKey = $state("");
   let selectedModel = $state("");
   let picoServerUrl = $state("http://localhost:11434");
+  let picoModels = $state<ModelOption[]>([]);
+  let picoLoading = $state(false);
   let verifying = $state(false);
   let verified = $state(onboardingStore.state.data.api_key.verified);
   let error = $state<string | null>(null);
@@ -111,12 +113,46 @@
   ];
 
   const currentProvider = $derived(providers.find((p) => p.id === provider)!);
+  const currentModels = $derived(
+    provider === "pico" && picoModels.length > 0
+      ? picoModels
+      : currentProvider.models,
+  );
+
+  async function fetchPicoModels(serverUrl: string) {
+    picoLoading = true;
+    try {
+      const resp = await fetch(`${serverUrl}/api/tags`);
+      if (!resp.ok) return;
+      const data = await resp.json();
+      const models: ModelOption[] = (data.models ?? []).map((m: { name: string }) => ({
+        id: `pico/${m.name}`,
+        name: m.name,
+      }));
+      if (models.length > 0) {
+        picoModels = models;
+      }
+    } catch {
+      // Server unreachable — keep hardcoded fallback
+    } finally {
+      picoLoading = false;
+    }
+  }
+
+  // Discover Pico models when provider is selected
+  $effect(() => {
+    if (provider === "pico") {
+      fetchPicoModels(picoServerUrl);
+    }
+  });
 
   // Set default model when provider changes
   $effect(() => {
-    const p = providers.find((p) => p.id === provider);
-    if (p && (!selectedModel || !p.models.some((m) => m.id === selectedModel))) {
-      selectedModel = p.models[0].id;
+    const models = provider === "pico" && picoModels.length > 0
+      ? picoModels
+      : currentProvider.models;
+    if (models.length > 0 && (!selectedModel || !models.some((m) => m.id === selectedModel))) {
+      selectedModel = models[0].id;
     }
   });
 
@@ -128,7 +164,7 @@
   }
 
   function modelDisplayName(): string {
-    const m = currentProvider.models.find((m) => m.id === selectedModel);
+    const m = currentModels.find((m) => m.id === selectedModel);
     return m?.name ?? selectedModel;
   }
 
@@ -271,16 +307,18 @@
 
   <!-- Model Selection -->
   <div class="mb-6">
-    <label for="model-select" class="text-sm font-medium text-text mb-2 block">Model:</label>
+    <label for="model-select" class="text-sm font-medium text-text mb-2 block">
+      Model:{#if picoLoading}<span class="text-text-muted font-normal ml-2">discovering...</span>{/if}
+    </label>
     <select
       id="model-select"
       bind:value={selectedModel}
-      disabled={verified}
+      disabled={verified || picoLoading}
       class="w-full p-3 bg-bg-input border border-border rounded-xl text-text text-sm
              focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary
              disabled:opacity-50 disabled:cursor-not-allowed"
     >
-      {#each currentProvider.models as m}
+      {#each currentModels as m}
         <option value={m.id}>
           {m.name}{m.tag ? ` — ${m.tag}` : ""}
         </option>
@@ -322,6 +360,14 @@
           bind:value={picoServerUrl}
           error={error ?? undefined}
         />
+        <button
+          type="button"
+          class="mt-2 text-xs text-primary hover:underline"
+          onclick={() => fetchPicoModels(picoServerUrl)}
+          disabled={picoLoading}
+        >
+          {picoLoading ? "Discovering models..." : "Refresh models from server"}
+        </button>
       </div>
 
       <!-- Save Button -->

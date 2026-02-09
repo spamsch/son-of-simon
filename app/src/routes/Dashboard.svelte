@@ -283,6 +283,8 @@
   let settingsSuccess = $state<string | null>(null);
 
   let picoApiBase = $state("http://localhost:11434");
+  let picoModels = $state<ModelOption[]>([]);
+  let picoLoading = $state(false);
 
   let paperlessUrl = $state("");
   let paperlessToken = $state("");
@@ -293,12 +295,46 @@
   let needsRestart = $state(false);
 
   const settingsCurrentProvider = $derived(providers.find((p) => p.id === settingsProvider)!);
+  const settingsCurrentModels = $derived(
+    settingsProvider === "pico" && picoModels.length > 0
+      ? picoModels
+      : settingsCurrentProvider.models,
+  );
+
+  async function fetchPicoModels(serverUrl: string) {
+    picoLoading = true;
+    try {
+      const resp = await fetch(`${serverUrl}/api/tags`);
+      if (!resp.ok) return;
+      const data = await resp.json();
+      const models: ModelOption[] = (data.models ?? []).map((m: { name: string }) => ({
+        id: `pico/${m.name}`,
+        name: m.name,
+      }));
+      if (models.length > 0) {
+        picoModels = models;
+      }
+    } catch {
+      // Server unreachable — keep hardcoded fallback
+    } finally {
+      picoLoading = false;
+    }
+  }
+
+  // Discover Pico models when provider is selected
+  $effect(() => {
+    if (settingsProvider === "pico") {
+      fetchPicoModels(picoApiBase);
+    }
+  });
 
   // Set default model when provider changes
   $effect(() => {
-    const p = providers.find((p) => p.id === settingsProvider);
-    if (p && (!settingsModel || !p.models.some((m) => m.id === settingsModel))) {
-      settingsModel = p.models[0].id;
+    const models = settingsProvider === "pico" && picoModels.length > 0
+      ? picoModels
+      : settingsCurrentProvider.models;
+    if (models.length > 0 && (!settingsModel || !models.some((m) => m.id === settingsModel))) {
+      settingsModel = models[0].id;
     }
   });
 
@@ -320,12 +356,18 @@
       // Pre-populate model
       if (config.MACBOT_MODEL) {
         const model = config.MACBOT_MODEL;
-        // Find which provider owns this model
-        for (const p of providers) {
-          if (p.models.some((m) => m.id === model)) {
-            settingsProvider = p.id;
-            settingsModel = model;
-            break;
+        if (model.startsWith("pico/")) {
+          // Pico model — set it directly, discovery will validate later
+          settingsProvider = "pico";
+          settingsModel = model;
+        } else {
+          // Find which provider owns this model
+          for (const p of providers) {
+            if (p.models.some((m) => m.id === model)) {
+              settingsProvider = p.id;
+              settingsModel = model;
+              break;
+            }
           }
         }
       }
@@ -679,14 +721,18 @@
 
           <!-- Model dropdown -->
           <div class="mb-3">
-            <label for="settings-model" class="text-xs text-text-muted mb-1 block">Model</label>
+            <label for="settings-model" class="text-xs text-text-muted mb-1 block">
+              Model{#if picoLoading}<span class="font-normal ml-1">— discovering...</span>{/if}
+            </label>
             <select
               id="settings-model"
               bind:value={settingsModel}
+              disabled={picoLoading}
               class="w-full p-2.5 bg-bg-input border border-border rounded-xl text-text text-sm
-                     focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary"
+                     focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary
+                     disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {#each settingsCurrentProvider.models as m}
+              {#each settingsCurrentModels as m}
                 <option value={m.id}>
                   {m.name}{m.tag ? ` — ${m.tag}` : ""}
                 </option>
@@ -703,6 +749,14 @@
                 placeholder="http://localhost:11434"
                 bind:value={picoApiBase}
               />
+              <button
+                type="button"
+                class="mt-1 text-xs text-primary hover:underline"
+                onclick={() => fetchPicoModels(picoApiBase)}
+                disabled={picoLoading}
+              >
+                {picoLoading ? "Discovering models..." : "Refresh models from server"}
+              </button>
             </div>
           {:else}
             <!-- Current key display -->
