@@ -145,6 +145,7 @@
   }
 
   function getModelDisplay(model: string): string {
+    if (model.startsWith("pico/")) return `Pico (${model.split("/").pop()})`;
     if (model.startsWith("openrouter/")) {
       // e.g. "openrouter/deepseek/deepseek-v3.2-20251201" -> "OpenRouter (deepseek-v3.2-20251201)"
       const parts = model.split("/");
@@ -210,6 +211,7 @@
     keyPrefix: string;
     envPrefixed: string;
     envStandard: string;
+    isLocal?: boolean;
     models: ModelOption[];
   }
 
@@ -256,6 +258,20 @@
         { id: "openrouter/x-ai/grok-4.1-fast", name: "Grok 4.1 Fast" },
       ],
     },
+    {
+      id: "pico",
+      name: "Pico (Local)",
+      keyPrefix: "",
+      envPrefixed: "",
+      envStandard: "",
+      isLocal: true,
+      models: [
+        { id: "pico/llama3.2", name: "Llama 3.2", tag: "Recommended" },
+        { id: "pico/deepseek-r1:8b", name: "DeepSeek R1 8B", tag: "Reasoning" },
+        { id: "pico/gemma3", name: "Gemma 3" },
+        { id: "pico/qwen2.5", name: "Qwen 2.5" },
+      ],
+    },
   ];
 
   // Settings panel state
@@ -266,6 +282,10 @@
   let settingsError = $state<string | null>(null);
   let settingsSuccess = $state<string | null>(null);
 
+  let picoApiBase = $state("http://localhost:11434");
+  let picoModels = $state<ModelOption[]>([]);
+  let picoLoading = $state(false);
+
   let paperlessUrl = $state("");
   let paperlessToken = $state("");
   let paperlessSaving = $state(false);
@@ -275,20 +295,57 @@
   let needsRestart = $state(false);
 
   const settingsCurrentProvider = $derived(providers.find((p) => p.id === settingsProvider)!);
+  const settingsCurrentModels = $derived(
+    settingsProvider === "pico" && picoModels.length > 0
+      ? picoModels
+      : settingsCurrentProvider.models,
+  );
+
+  async function fetchPicoModels(serverUrl: string) {
+    picoLoading = true;
+    try {
+      const resp = await fetch(`${serverUrl}/api/tags`);
+      if (!resp.ok) return;
+      const data = await resp.json();
+      const models: ModelOption[] = (data.models ?? []).map((m: { name: string }) => ({
+        id: `pico/${m.name}`,
+        name: m.name,
+      }));
+      if (models.length > 0) {
+        picoModels = models;
+      }
+    } catch {
+      // Server unreachable — keep hardcoded fallback
+    } finally {
+      picoLoading = false;
+    }
+  }
+
+  // Discover Pico models when provider is selected
+  $effect(() => {
+    if (settingsProvider === "pico") {
+      fetchPicoModels(picoApiBase);
+    }
+  });
 
   // Set default model when provider changes
   $effect(() => {
-    const p = providers.find((p) => p.id === settingsProvider);
-    if (p && (!settingsModel || !p.models.some((m) => m.id === settingsModel))) {
-      settingsModel = p.models[0].id;
+    const models = settingsProvider === "pico" && picoModels.length > 0
+      ? picoModels
+      : settingsCurrentProvider.models;
+    if (models.length > 0 && (!settingsModel || !models.some((m) => m.id === settingsModel))) {
+      settingsModel = models[0].id;
     }
   });
 
   // Pre-populate settings from config when panel opens or config reloads
   $effect(() => {
     if (showSettings && config) {
-      // Detect provider from existing key
-      if (config.MACBOT_ANTHROPIC_API_KEY) {
+      // Detect provider from existing key or Pico config
+      if (config.MACBOT_PICO_API_BASE || (config.MACBOT_MODEL && config.MACBOT_MODEL.startsWith("pico/"))) {
+        settingsProvider = "pico";
+        picoApiBase = config.MACBOT_PICO_API_BASE ?? "http://localhost:11434";
+      } else if (config.MACBOT_ANTHROPIC_API_KEY) {
         settingsProvider = "anthropic";
       } else if (config.MACBOT_OPENAI_API_KEY) {
         settingsProvider = "openai";
@@ -299,12 +356,18 @@
       // Pre-populate model
       if (config.MACBOT_MODEL) {
         const model = config.MACBOT_MODEL;
-        // Find which provider owns this model
-        for (const p of providers) {
-          if (p.models.some((m) => m.id === model)) {
-            settingsProvider = p.id;
-            settingsModel = model;
-            break;
+        if (model.startsWith("pico/")) {
+          // Pico model — set it directly, discovery will validate later
+          settingsProvider = "pico";
+          settingsModel = model;
+        } else {
+          // Find which provider owns this model
+          for (const p of providers) {
+            if (p.models.some((m) => m.id === model)) {
+              settingsProvider = p.id;
+              settingsModel = model;
+              break;
+            }
           }
         }
       }
@@ -352,19 +415,25 @@
         "MACBOT_ANTHROPIC_API_KEY", "ANTHROPIC_API_KEY",
         "MACBOT_OPENAI_API_KEY", "OPENAI_API_KEY",
         "MACBOT_OPENROUTER_API_KEY", "OPENROUTER_API_KEY",
+        "MACBOT_PICO_API_BASE",
         "MACBOT_MODEL", "MODEL",
       ];
 
-      // Only write API key if user entered a new one
-      if (settingsApiKey.trim()) {
-        updates[settingsCurrentProvider.envPrefixed] = settingsApiKey;
-        updates[settingsCurrentProvider.envStandard] = settingsApiKey;
+      if (settingsCurrentProvider.isLocal) {
+        // Pico: save server URL, no API key
+        updates["MACBOT_PICO_API_BASE"] = picoApiBase;
       } else {
-        // Keep existing key for the selected provider
-        const existingKey = config[settingsCurrentProvider.envPrefixed];
-        if (existingKey) {
-          updates[settingsCurrentProvider.envPrefixed] = existingKey;
-          updates[settingsCurrentProvider.envStandard] = existingKey;
+        // Only write API key if user entered a new one
+        if (settingsApiKey.trim()) {
+          updates[settingsCurrentProvider.envPrefixed] = settingsApiKey;
+          updates[settingsCurrentProvider.envStandard] = settingsApiKey;
+        } else {
+          // Keep existing key for the selected provider
+          const existingKey = config[settingsCurrentProvider.envPrefixed];
+          if (existingKey) {
+            updates[settingsCurrentProvider.envPrefixed] = existingKey;
+            updates[settingsCurrentProvider.envStandard] = existingKey;
+          }
         }
       }
 
@@ -437,13 +506,15 @@
           </div>
         </div>
 
-        <!-- API Key -->
+        <!-- API Key / Local Server -->
         <div class="flex items-center gap-3 p-3 bg-bg-card rounded-xl border border-border">
           <Key class="w-5 h-5 text-primary" />
           <div class="flex-1">
-            <p class="text-xs text-text-muted">API Key</p>
+            <p class="text-xs text-text-muted">{config.MACBOT_PICO_API_BASE ? "Local Server" : "API Key"}</p>
             <p class="text-sm font-medium text-text font-mono">
-              {#if config.MACBOT_OPENAI_API_KEY}
+              {#if config.MACBOT_PICO_API_BASE}
+                {config.MACBOT_PICO_API_BASE}
+              {:else if config.MACBOT_OPENAI_API_KEY}
                 {maskApiKey(config.MACBOT_OPENAI_API_KEY)}
               {:else if config.MACBOT_ANTHROPIC_API_KEY}
                 {maskApiKey(config.MACBOT_ANTHROPIC_API_KEY)}
@@ -650,14 +721,18 @@
 
           <!-- Model dropdown -->
           <div class="mb-3">
-            <label for="settings-model" class="text-xs text-text-muted mb-1 block">Model</label>
+            <label for="settings-model" class="text-xs text-text-muted mb-1 block">
+              Model{#if picoLoading}<span class="font-normal ml-1">— discovering...</span>{/if}
+            </label>
             <select
               id="settings-model"
               bind:value={settingsModel}
+              disabled={picoLoading}
               class="w-full p-2.5 bg-bg-input border border-border rounded-xl text-text text-sm
-                     focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary"
+                     focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary
+                     disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {#each settingsCurrentProvider.models as m}
+              {#each settingsCurrentModels as m}
                 <option value={m.id}>
                   {m.name}{m.tag ? ` — ${m.tag}` : ""}
                 </option>
@@ -665,23 +740,43 @@
             </select>
           </div>
 
-          <!-- Current key display -->
-          {#if config[settingsCurrentProvider.envPrefixed]}
-            <div class="mb-3 flex items-center gap-2 text-xs text-text-muted">
-              <Key class="w-3.5 h-3.5" />
-              <span>Current key: <span class="font-mono">{maskApiKey(config[settingsCurrentProvider.envPrefixed])}</span></span>
+          {#if settingsCurrentProvider.isLocal}
+            <!-- Pico: Server URL input -->
+            <div class="mb-3">
+              <Input
+                type="url"
+                label="Server URL"
+                placeholder="http://localhost:11434"
+                bind:value={picoApiBase}
+              />
+              <button
+                type="button"
+                class="mt-1 text-xs text-primary hover:underline"
+                onclick={() => fetchPicoModels(picoApiBase)}
+                disabled={picoLoading}
+              >
+                {picoLoading ? "Discovering models..." : "Refresh models from server"}
+              </button>
+            </div>
+          {:else}
+            <!-- Current key display -->
+            {#if config[settingsCurrentProvider.envPrefixed]}
+              <div class="mb-3 flex items-center gap-2 text-xs text-text-muted">
+                <Key class="w-3.5 h-3.5" />
+                <span>Current key: <span class="font-mono">{maskApiKey(config[settingsCurrentProvider.envPrefixed])}</span></span>
+              </div>
+            {/if}
+
+            <!-- API key input -->
+            <div class="mb-3">
+              <Input
+                type="password"
+                label="New API Key (leave blank to keep current)"
+                placeholder={settingsCurrentProvider.keyPrefix + "..."}
+                bind:value={settingsApiKey}
+              />
             </div>
           {/if}
-
-          <!-- API key input -->
-          <div class="mb-3">
-            <Input
-              type="password"
-              label="New API Key (leave blank to keep current)"
-              placeholder={settingsCurrentProvider.keyPrefix + "..."}
-              bind:value={settingsApiKey}
-            />
-          </div>
 
           {#if settingsError}
             <p class="text-xs text-error mb-2">{settingsError}</p>

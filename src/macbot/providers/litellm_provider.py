@@ -6,6 +6,7 @@ format: provider/model (e.g., anthropic/claude-sonnet-4-20250514, openai/gpt-4o)
 
 import json
 import os
+import re
 from typing import Any
 
 import litellm
@@ -33,14 +34,20 @@ class LiteLLMProvider(LLMProvider):
     2. Pass them via the api_key parameter (will be set in environment)
     """
 
-    def __init__(self, model: str, api_key: str | None = None) -> None:
+    def __init__(self, model: str, api_key: str | None = None, api_base: str | None = None) -> None:
         """Initialize the LiteLLM provider.
 
         Args:
             model: Model string in provider/model format
             api_key: Optional API key (will be set in environment for the provider)
+            api_base: Optional API base URL (e.g. for Pico/Ollama local servers)
         """
+        # Translate pico/ prefix to ollama_chat/ for LiteLLM
+        if model.startswith("pico/"):
+            model = "ollama_chat/" + model[5:]
+
         super().__init__(api_key or "", model)
+        self.api_base = api_base
 
         # Suppress LiteLLM's verbose logging
         litellm.suppress_debug_info = True
@@ -122,6 +129,9 @@ class LiteLLMProvider(LLMProvider):
             "messages": litellm_messages,
         }
 
+        if self.api_base:
+            kwargs["api_base"] = self.api_base
+
         # Convert tools to OpenAI format (LiteLLM expects this)
         if tools:
             kwargs["tools"] = [
@@ -165,6 +175,14 @@ class LiteLLMProvider(LLMProvider):
         finish_reason: str | None = None
         usage = {"input_tokens": 0, "output_tokens": 0}
 
+        # Buffer for detecting and suppressing protocol tokens during streaming.
+        # Once we know the stream is clean (no protocol tokens in first chunk)
+        # or we've found the final channel marker, we forward directly.
+        _stream_buf = ""
+        _stream_forwarding = False  # True once we're past any protocol preamble
+        _FINAL_MARKER = "<|channel|>final<|message|>"
+        _PROTOCOL_START = "<|"
+
         response = await litellm.acompletion(**kwargs)
 
         async for chunk in response:
@@ -187,7 +205,24 @@ class LiteLLMProvider(LLMProvider):
             # Handle content chunks
             if delta.content:
                 content_chunks.append(delta.content)
-                stream_callback(delta.content)
+
+                if _stream_forwarding:
+                    # Already past protocol preamble — forward directly
+                    stream_callback(delta.content)
+                else:
+                    # Still buffering — check for protocol tokens
+                    _stream_buf += delta.content
+
+                    if _FINAL_MARKER in _stream_buf:
+                        # Found the final channel — forward everything after it
+                        _, after = _stream_buf.split(_FINAL_MARKER, 1)
+                        if after:
+                            stream_callback(after)
+                        _stream_forwarding = True
+                    elif _PROTOCOL_START not in _stream_buf and len(_stream_buf) > 10:
+                        # No protocol tokens detected — stream is clean, forward all
+                        stream_callback(_stream_buf)
+                        _stream_forwarding = True
 
             # Handle tool call chunks
             if delta.tool_calls:
@@ -202,6 +237,12 @@ class LiteLLMProvider(LLMProvider):
                             tool_calls_data[idx]["name"] = tc.function.name
                         if tc.function.arguments:
                             tool_calls_data[idx]["arguments"] += tc.function.arguments
+
+        # Flush remaining buffer if stream ended while still buffering
+        if not _stream_forwarding and _stream_buf:
+            cleaned = self._strip_protocol_tokens(_stream_buf)
+            if cleaned:
+                stream_callback(cleaned)
 
         # Build final tool calls list
         tool_calls = []
@@ -221,12 +262,50 @@ class LiteLLMProvider(LLMProvider):
                 )
             )
 
+        content = "".join(content_chunks) if content_chunks else None
+        if content:
+            content = self._strip_protocol_tokens(content)
+
         return LLMResponse(
-            content="".join(content_chunks) if content_chunks else None,
+            content=content,
             tool_calls=tool_calls,
             stop_reason=finish_reason,
             usage=usage,
         )
+
+    @staticmethod
+    def _strip_protocol_tokens(text: str) -> str:
+        """Strip leaked model protocol/reasoning tokens from content.
+
+        Some models (e.g. GPT-5.x) may leak internal channel markers like
+        <|channel|>analysis<|message|>...<|end|><|start|>assistant<|channel|>final<|message|>...
+        This extracts only the final user-facing content.
+        """
+        # If there's a final channel message, extract just that content
+        final_match = re.search(
+            r"<\|channel\|>final<\|message\|>",
+            text,
+        )
+        if final_match:
+            text = text[final_match.end():]
+            # Strip trailing protocol tokens from the extracted content
+            text = re.sub(r"<\|end\|>.*", "", text, flags=re.DOTALL)
+            return text.strip()
+
+        # No final channel — strip all protocol-enclosed blocks.
+        # Pattern: <|token|>...(content)...<|end|> or <|token|>...(content)...<|start|>
+        # Remove complete protocol blocks (analysis, commentary, etc.)
+        text = re.sub(
+            r"<\|(?:channel|start)\|>.*?(?=<\|(?:start|end)\|>|$)",
+            "",
+            text,
+            flags=re.DOTALL,
+        )
+
+        # Strip any remaining individual protocol tokens
+        text = re.sub(r"<\|(?:channel|message|start|end|constrain|system)\|>", "", text)
+
+        return text.strip()
 
     def _parse_response(self, response: Any) -> LLMResponse:
         """Parse a non-streaming LiteLLM response.
@@ -258,8 +337,12 @@ class LiteLLMProvider(LLMProvider):
                     )
                 )
 
+        content = message.content
+        if content:
+            content = self._strip_protocol_tokens(content)
+
         return LLMResponse(
-            content=message.content,
+            content=content,
             tool_calls=tool_calls,
             stop_reason=choice.finish_reason,
             usage={

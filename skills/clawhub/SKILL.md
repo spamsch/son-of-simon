@@ -50,6 +50,12 @@ clawhub install --dir ~/.macbot/skills slack
 ### Acting Autonomously
 When the user asks to search for or install a skill, just do it. Don't ask for confirmation before searching. Only confirm before installing (since it writes to disk).
 
+### Proactive Discovery
+When the user asks about a capability you're unsure about (e.g., "Can you connect to Slack?", "Check my Jira tickets"):
+1. **First check if it's already installed**: Run `clawhub list --dir ~/.macbot/skills` to see installed skills. If the skill is already there, read its SKILL.md and use it immediately — don't search ClawHub for something you already have.
+2. **If not installed, search ClawHub**: Run `clawhub search <keyword>` to find a community skill. If one is found, tell the user about it and offer to install it.
+This turns "I can't do that" into either "You already have that — let me use it" or "I found a skill for that — want me to install it?"
+
 ### Install Workflow
 1. If given a URL, extract the slug (e.g., `https://clawhub.ai/steipete/slack` → `slack`)
 2. `run_shell_command`: `clawhub install --dir ~/.macbot/skills <slug>`

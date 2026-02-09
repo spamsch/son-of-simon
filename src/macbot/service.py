@@ -779,6 +779,16 @@ def run_service(daemon: bool = False, verbose: bool = False, foreground: bool = 
     from macbot import __version__
     console.print(f"[bold]Starting Son of Simon[/bold] v{__version__}...\n")
 
+    # Show model/provider
+    model = settings.get_model()
+    provider = settings.get_provider()
+    if provider == "pico":
+        api_base = settings.pico_api_base
+        model_name = model.split("/", 1)[1] if "/" in model else model
+        console.print(f"  [green]✓[/green] Model: {model_name} via Pico ({api_base})")
+    else:
+        console.print(f"  [green]✓[/green] Model: {model}")
+
     console.print(f"  [green]✓[/green] Heartbeat: every {settings.heartbeat_interval // 60} minutes, {settings.heartbeat_active_start}:00-{settings.heartbeat_active_end}:00 (~/.macbot/heartbeat.md)")
 
     if has_cron:
