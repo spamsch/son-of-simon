@@ -14,11 +14,12 @@ Your Mac is already set up. Why should an AI make you do it again with OAuth and
 
 ## What is this?
 
-Son of Simon is an AI assistant for macOS that works directly with your built-in Apple apps — Mail, Calendar, Reminders, Notes, and Safari. Add your account in Apple Mail/Calendar and the agent can use it. You do not need to code. Download the app, sign in, and start asking.
+Son of Simon is an AI assistant for macOS that works directly with your built-in Apple apps — Mail, Calendar, Reminders, Notes, and Safari. It runs with cloud providers (Anthropic, OpenAI, OpenRouter) or **fully offline on your Mac** using [Pico AI Server](https://apps.apple.com/app/pico-ai-server/id6502491545) — no API key needed for local models. Add your account in Apple Mail/Calendar and the agent can use it. You do not need to code. Download the app, sign in, and start asking.
 
 |  | Son of Simon | Claude / ChatGPT | OpenClaw |
 |---|---|---|---|
 | **Control Apple apps** | Yes — Mail, Calendar, Reminders, Notes, Safari | No | Limited |
+| **Local models** | Yes — via Pico AI Server, no API key needed | No | No |
 | **Setup** | One app, guided wizard | Browser sign-in | Complex, error-prone |
 | **Passwords / tokens** | Never accessed — apps are already signed in | Not needed | Stores OAuth tokens |
 | **Skills ecosystem** | [AgentSkills](https://agentskills.io) / [ClawHub](https://clawhub.ai) | Plugins / GPTs | AgentSkills |
