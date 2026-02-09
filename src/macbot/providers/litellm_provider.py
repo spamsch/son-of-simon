@@ -33,14 +33,20 @@ class LiteLLMProvider(LLMProvider):
     2. Pass them via the api_key parameter (will be set in environment)
     """
 
-    def __init__(self, model: str, api_key: str | None = None) -> None:
+    def __init__(self, model: str, api_key: str | None = None, api_base: str | None = None) -> None:
         """Initialize the LiteLLM provider.
 
         Args:
             model: Model string in provider/model format
             api_key: Optional API key (will be set in environment for the provider)
+            api_base: Optional API base URL (e.g. for Pico/Ollama local servers)
         """
+        # Translate pico/ prefix to ollama_chat/ for LiteLLM
+        if model.startswith("pico/"):
+            model = "ollama_chat/" + model[5:]
+
         super().__init__(api_key or "", model)
+        self.api_base = api_base
 
         # Suppress LiteLLM's verbose logging
         litellm.suppress_debug_info = True
@@ -121,6 +127,9 @@ class LiteLLMProvider(LLMProvider):
             "model": self.model,
             "messages": litellm_messages,
         }
+
+        if self.api_base:
+            kwargs["api_base"] = self.api_base
 
         # Convert tools to OpenAI format (LiteLLM expects this)
         if tools:

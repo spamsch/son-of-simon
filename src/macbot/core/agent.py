@@ -73,8 +73,9 @@ class Agent:
         """
         model = self.config.get_model()
         api_key = self.config.get_api_key_for_model(model)
+        api_base = self.config.get_api_base_for_model(model)
 
-        return LiteLLMProvider(model=model, api_key=api_key)
+        return LiteLLMProvider(model=model, api_key=api_key, api_base=api_base)
 
     async def run(
         self,
@@ -265,6 +266,7 @@ On subsequent requests for the same site, **check memory first** (`memory_list`)
   - `download_attachments` NOT osascript for attachments
 - If a dedicated tool fails, report the error. Do NOT work around it with run_shell_command.
 - **Skills that document shell/CLI commands**: Many installed skills (e.g., Trello, Slack) work by running CLI commands or curl/API calls documented in their SKILL.md body. You CAN and SHOULD use `run_shell_command` to execute these commands. The skill body IS your instruction manual — follow its documented commands. Do not say "I don't have a tool for this" when the skill shows you exactly what shell commands to run.
+- **Before saying "I can't do this"**: First check your Capabilities & Skills section and run `clawhub list --dir ~/.macbot/skills` to see if a skill is already installed. If it is, use it — don't search ClawHub for something you already have. If nothing is installed, search ClawHub (`clawhub search <keyword>`) for a community skill. Also consider using `web_search` to find relevant APIs or CLI tools. Only tell the user something isn't possible after you've checked installed skills, searched ClawHub, and found no options.
 """
 
     async def _get_llm_response(self, stream: bool = False, verbose: bool = False) -> LLMResponse:

@@ -15,6 +15,7 @@
   let provider = $state(onboardingStore.state.data.api_key.provider);
   let apiKey = $state("");
   let selectedModel = $state("");
+  let picoServerUrl = $state("http://localhost:11434");
   let verifying = $state(false);
   let verified = $state(onboardingStore.state.data.api_key.verified);
   let error = $state<string | null>(null);
@@ -34,6 +35,7 @@
     keyPrefix: string;
     envPrefixed: string;
     envStandard: string;
+    isLocal?: boolean;
     models: ModelOption[];
   }
 
@@ -89,6 +91,23 @@
         { id: "openrouter/x-ai/grok-4.1-fast", name: "Grok 4.1 Fast" },
       ],
     },
+    {
+      id: "pico",
+      name: "Pico AI Server (Local)",
+      description: "Run models locally on your Mac. No API key needed.",
+      url: "https://apps.apple.com/app/pico-ai-server/id6502491545",
+      keyPlaceholder: "",
+      keyPrefix: "",
+      envPrefixed: "",
+      envStandard: "",
+      isLocal: true,
+      models: [
+        { id: "pico/llama3.2", name: "Llama 3.2", tag: "Recommended" },
+        { id: "pico/deepseek-r1:8b", name: "DeepSeek R1 8B", tag: "Reasoning" },
+        { id: "pico/gemma3", name: "Gemma 3" },
+        { id: "pico/qwen2.5", name: "Qwen 2.5" },
+      ],
+    },
   ];
 
   const currentProvider = $derived(providers.find((p) => p.id === provider)!);
@@ -104,6 +123,7 @@
   function providerDisplayName(): string {
     if (provider === "anthropic") return "Anthropic";
     if (provider === "openai") return "OpenAI";
+    if (provider === "pico") return "Pico";
     return "OpenRouter";
   }
 
@@ -117,7 +137,7 @@
   }
 
   async function verifyKey() {
-    if (!apiKey.trim()) {
+    if (!currentProvider.isLocal && !apiKey.trim()) {
       error = "Please enter your API key in the field above";
       return;
     }
@@ -126,18 +146,30 @@
     error = null;
 
     try {
-      // Validate key format
-      const keyRegex = new RegExp(`^${currentProvider.keyPrefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`);
-      if (!keyRegex.test(apiKey)) {
-        error = `This doesn't look like a valid ${providerDisplayName()} API key. It should start with "${currentProvider.keyPrefix}"`;
-        verifying = false;
-        return;
+      if (currentProvider.isLocal) {
+        // Pico: validate server connectivity
+        try {
+          const resp = await fetch(`${picoServerUrl}/api/tags`);
+          if (!resp.ok) throw new Error(`Server returned ${resp.status}`);
+        } catch (e) {
+          error = `Cannot connect to Pico server at ${picoServerUrl}. Make sure Pico AI Server is running.`;
+          verifying = false;
+          return;
+        }
+      } else {
+        // Validate key format
+        const keyRegex = new RegExp(`^${currentProvider.keyPrefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`);
+        if (!keyRegex.test(apiKey)) {
+          error = `This doesn't look like a valid ${providerDisplayName()} API key. It should start with "${currentProvider.keyPrefix}"`;
+          verifying = false;
+          return;
+        }
       }
 
       // Read existing config
       let config = await invoke<string>("read_config");
 
-      // Remove all old API key and model lines
+      // Remove all old API key, model, and Pico lines
       const lines = config.split("\n").filter((line) => {
         const trimmed = line.trim();
         return (
@@ -148,14 +180,20 @@
           !trimmed.startsWith("ANTHROPIC_API_KEY=") &&
           !trimmed.startsWith("OPENAI_API_KEY=") &&
           !trimmed.startsWith("OPENROUTER_API_KEY=") &&
+          !trimmed.startsWith("MACBOT_PICO_API_BASE=") &&
           !trimmed.startsWith("MACBOT_MODEL=") &&
           !trimmed.startsWith("MODEL=")
         );
       });
 
-      // Add both prefixed (for pydantic) and standard (for litellm) env vars
-      lines.push(`${currentProvider.envPrefixed}=${apiKey}`);
-      lines.push(`${currentProvider.envStandard}=${apiKey}`);
+      if (currentProvider.isLocal) {
+        // Pico: save server URL and model, no API key
+        lines.push(`MACBOT_PICO_API_BASE=${picoServerUrl}`);
+      } else {
+        // Cloud provider: save API key
+        lines.push(`${currentProvider.envPrefixed}=${apiKey}`);
+        lines.push(`${currentProvider.envStandard}=${apiKey}`);
+      }
       lines.push(`MACBOT_MODEL=${selectedModel}`);
 
       await invoke("write_config", { content: lines.join("\n") + "\n" });
@@ -251,48 +289,89 @@
   </div>
 
   {#if !verified}
-    <!-- Get API Key Instructions -->
-    <div class="mb-6 p-5 bg-bg-card rounded-xl border border-border">
-      <h3 class="font-semibold text-text mb-3">How to get your API key:</h3>
-      <ol class="text-sm text-text-muted space-y-2 mb-4">
-        <li class="flex gap-2">
-          <span class="text-primary font-medium">1.</span>
-          <span>Click the button below to open {providerDisplayName()}'s website</span>
-        </li>
-        <li class="flex gap-2">
-          <span class="text-primary font-medium">2.</span>
-          <span>Create a free account or sign in</span>
-        </li>
-        <li class="flex gap-2">
-          <span class="text-primary font-medium">3.</span>
-          <span>Create a new API key and copy it</span>
-        </li>
-        <li class="flex gap-2">
-          <span class="text-primary font-medium">4.</span>
-          <span>Paste it in the field below</span>
-        </li>
-      </ol>
-      <Button variant="secondary" onclick={openProviderSite}>
-        Open {providerDisplayName()} Website
-        <ExternalLink class="w-4 h-4" />
+    {#if currentProvider.isLocal}
+      <!-- Pico Setup Instructions -->
+      <div class="mb-6 p-5 bg-bg-card rounded-xl border border-border">
+        <h3 class="font-semibold text-text mb-3">How to set up Pico AI Server:</h3>
+        <ol class="text-sm text-text-muted space-y-2 mb-4">
+          <li class="flex gap-2">
+            <span class="text-primary font-medium">1.</span>
+            <span>Install Pico AI Server from the Mac App Store</span>
+          </li>
+          <li class="flex gap-2">
+            <span class="text-primary font-medium">2.</span>
+            <span>Open Pico and download a model (e.g. Llama 3.2)</span>
+          </li>
+          <li class="flex gap-2">
+            <span class="text-primary font-medium">3.</span>
+            <span>Make sure the server is running, then click Save below</span>
+          </li>
+        </ol>
+        <Button variant="secondary" onclick={openProviderSite}>
+          Open Mac App Store
+          <ExternalLink class="w-4 h-4" />
+        </Button>
+      </div>
+
+      <!-- Server URL Input -->
+      <div class="mb-6">
+        <Input
+          type="url"
+          label="Server URL"
+          placeholder="http://localhost:11434"
+          bind:value={picoServerUrl}
+          error={error ?? undefined}
+        />
+      </div>
+
+      <!-- Save Button -->
+      <Button onclick={verifyKey} loading={verifying} disabled={verifying}>
+        {verifying ? "Checking server..." : "Save & Connect"}
       </Button>
-    </div>
+    {:else}
+      <!-- Get API Key Instructions -->
+      <div class="mb-6 p-5 bg-bg-card rounded-xl border border-border">
+        <h3 class="font-semibold text-text mb-3">How to get your API key:</h3>
+        <ol class="text-sm text-text-muted space-y-2 mb-4">
+          <li class="flex gap-2">
+            <span class="text-primary font-medium">1.</span>
+            <span>Click the button below to open {providerDisplayName()}'s website</span>
+          </li>
+          <li class="flex gap-2">
+            <span class="text-primary font-medium">2.</span>
+            <span>Create a free account or sign in</span>
+          </li>
+          <li class="flex gap-2">
+            <span class="text-primary font-medium">3.</span>
+            <span>Create a new API key and copy it</span>
+          </li>
+          <li class="flex gap-2">
+            <span class="text-primary font-medium">4.</span>
+            <span>Paste it in the field below</span>
+          </li>
+        </ol>
+        <Button variant="secondary" onclick={openProviderSite}>
+          Open {providerDisplayName()} Website
+          <ExternalLink class="w-4 h-4" />
+        </Button>
+      </div>
 
-    <!-- API Key Input -->
-    <div class="mb-6">
-      <Input
-        type="password"
-        label="Paste your API key here"
-        placeholder={currentProvider.keyPlaceholder}
-        bind:value={apiKey}
-        error={error ?? undefined}
-      />
-    </div>
+      <!-- API Key Input -->
+      <div class="mb-6">
+        <Input
+          type="password"
+          label="Paste your API key here"
+          placeholder={currentProvider.keyPlaceholder}
+          bind:value={apiKey}
+          error={error ?? undefined}
+        />
+      </div>
 
-    <!-- Save Button -->
-    <Button onclick={verifyKey} loading={verifying} disabled={verifying || !apiKey.trim()}>
-      {verifying ? "Saving..." : "Save API Key"}
-    </Button>
+      <!-- Save Button -->
+      <Button onclick={verifyKey} loading={verifying} disabled={verifying || !apiKey.trim()}>
+        {verifying ? "Saving..." : "Save API Key"}
+      </Button>
+    {/if}
   {:else}
     <!-- Success State -->
     <div class="flex items-center gap-3 p-5 bg-success/10 rounded-xl border border-success/30 mb-6">
@@ -300,7 +379,7 @@
         <Check class="w-6 h-6 text-success" />
       </div>
       <div>
-        <p class="font-semibold text-success">API key saved successfully!</p>
+        <p class="font-semibold text-success">{currentProvider.isLocal ? "Connected to local server!" : "API key saved successfully!"}</p>
         <p class="text-sm text-text-muted">Son of Simon is now connected to {modelDisplayName()} via {providerDisplayName()}.</p>
       </div>
     </div>

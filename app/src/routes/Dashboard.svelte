@@ -145,6 +145,7 @@
   }
 
   function getModelDisplay(model: string): string {
+    if (model.startsWith("pico/")) return `Pico (${model.split("/").pop()})`;
     if (model.startsWith("openrouter/")) {
       // e.g. "openrouter/deepseek/deepseek-v3.2-20251201" -> "OpenRouter (deepseek-v3.2-20251201)"
       const parts = model.split("/");
@@ -210,6 +211,7 @@
     keyPrefix: string;
     envPrefixed: string;
     envStandard: string;
+    isLocal?: boolean;
     models: ModelOption[];
   }
 
@@ -256,6 +258,20 @@
         { id: "openrouter/x-ai/grok-4.1-fast", name: "Grok 4.1 Fast" },
       ],
     },
+    {
+      id: "pico",
+      name: "Pico (Local)",
+      keyPrefix: "",
+      envPrefixed: "",
+      envStandard: "",
+      isLocal: true,
+      models: [
+        { id: "pico/llama3.2", name: "Llama 3.2", tag: "Recommended" },
+        { id: "pico/deepseek-r1:8b", name: "DeepSeek R1 8B", tag: "Reasoning" },
+        { id: "pico/gemma3", name: "Gemma 3" },
+        { id: "pico/qwen2.5", name: "Qwen 2.5" },
+      ],
+    },
   ];
 
   // Settings panel state
@@ -265,6 +281,8 @@
   let settingsSaving = $state(false);
   let settingsError = $state<string | null>(null);
   let settingsSuccess = $state<string | null>(null);
+
+  let picoApiBase = $state("http://localhost:11434");
 
   let paperlessUrl = $state("");
   let paperlessToken = $state("");
@@ -287,8 +305,11 @@
   // Pre-populate settings from config when panel opens or config reloads
   $effect(() => {
     if (showSettings && config) {
-      // Detect provider from existing key
-      if (config.MACBOT_ANTHROPIC_API_KEY) {
+      // Detect provider from existing key or Pico config
+      if (config.MACBOT_PICO_API_BASE || (config.MACBOT_MODEL && config.MACBOT_MODEL.startsWith("pico/"))) {
+        settingsProvider = "pico";
+        picoApiBase = config.MACBOT_PICO_API_BASE ?? "http://localhost:11434";
+      } else if (config.MACBOT_ANTHROPIC_API_KEY) {
         settingsProvider = "anthropic";
       } else if (config.MACBOT_OPENAI_API_KEY) {
         settingsProvider = "openai";
@@ -352,19 +373,25 @@
         "MACBOT_ANTHROPIC_API_KEY", "ANTHROPIC_API_KEY",
         "MACBOT_OPENAI_API_KEY", "OPENAI_API_KEY",
         "MACBOT_OPENROUTER_API_KEY", "OPENROUTER_API_KEY",
+        "MACBOT_PICO_API_BASE",
         "MACBOT_MODEL", "MODEL",
       ];
 
-      // Only write API key if user entered a new one
-      if (settingsApiKey.trim()) {
-        updates[settingsCurrentProvider.envPrefixed] = settingsApiKey;
-        updates[settingsCurrentProvider.envStandard] = settingsApiKey;
+      if (settingsCurrentProvider.isLocal) {
+        // Pico: save server URL, no API key
+        updates["MACBOT_PICO_API_BASE"] = picoApiBase;
       } else {
-        // Keep existing key for the selected provider
-        const existingKey = config[settingsCurrentProvider.envPrefixed];
-        if (existingKey) {
-          updates[settingsCurrentProvider.envPrefixed] = existingKey;
-          updates[settingsCurrentProvider.envStandard] = existingKey;
+        // Only write API key if user entered a new one
+        if (settingsApiKey.trim()) {
+          updates[settingsCurrentProvider.envPrefixed] = settingsApiKey;
+          updates[settingsCurrentProvider.envStandard] = settingsApiKey;
+        } else {
+          // Keep existing key for the selected provider
+          const existingKey = config[settingsCurrentProvider.envPrefixed];
+          if (existingKey) {
+            updates[settingsCurrentProvider.envPrefixed] = existingKey;
+            updates[settingsCurrentProvider.envStandard] = existingKey;
+          }
         }
       }
 
@@ -437,13 +464,15 @@
           </div>
         </div>
 
-        <!-- API Key -->
+        <!-- API Key / Local Server -->
         <div class="flex items-center gap-3 p-3 bg-bg-card rounded-xl border border-border">
           <Key class="w-5 h-5 text-primary" />
           <div class="flex-1">
-            <p class="text-xs text-text-muted">API Key</p>
+            <p class="text-xs text-text-muted">{config.MACBOT_PICO_API_BASE ? "Local Server" : "API Key"}</p>
             <p class="text-sm font-medium text-text font-mono">
-              {#if config.MACBOT_OPENAI_API_KEY}
+              {#if config.MACBOT_PICO_API_BASE}
+                {config.MACBOT_PICO_API_BASE}
+              {:else if config.MACBOT_OPENAI_API_KEY}
                 {maskApiKey(config.MACBOT_OPENAI_API_KEY)}
               {:else if config.MACBOT_ANTHROPIC_API_KEY}
                 {maskApiKey(config.MACBOT_ANTHROPIC_API_KEY)}
@@ -665,23 +694,35 @@
             </select>
           </div>
 
-          <!-- Current key display -->
-          {#if config[settingsCurrentProvider.envPrefixed]}
-            <div class="mb-3 flex items-center gap-2 text-xs text-text-muted">
-              <Key class="w-3.5 h-3.5" />
-              <span>Current key: <span class="font-mono">{maskApiKey(config[settingsCurrentProvider.envPrefixed])}</span></span>
+          {#if settingsCurrentProvider.isLocal}
+            <!-- Pico: Server URL input -->
+            <div class="mb-3">
+              <Input
+                type="url"
+                label="Server URL"
+                placeholder="http://localhost:11434"
+                bind:value={picoApiBase}
+              />
+            </div>
+          {:else}
+            <!-- Current key display -->
+            {#if config[settingsCurrentProvider.envPrefixed]}
+              <div class="mb-3 flex items-center gap-2 text-xs text-text-muted">
+                <Key class="w-3.5 h-3.5" />
+                <span>Current key: <span class="font-mono">{maskApiKey(config[settingsCurrentProvider.envPrefixed])}</span></span>
+              </div>
+            {/if}
+
+            <!-- API key input -->
+            <div class="mb-3">
+              <Input
+                type="password"
+                label="New API Key (leave blank to keep current)"
+                placeholder={settingsCurrentProvider.keyPrefix + "..."}
+                bind:value={settingsApiKey}
+              />
             </div>
           {/if}
-
-          <!-- API key input -->
-          <div class="mb-3">
-            <Input
-              type="password"
-              label="New API Key (leave blank to keep current)"
-              placeholder={settingsCurrentProvider.keyPrefix + "..."}
-              bind:value={settingsApiKey}
-            />
-          </div>
 
           {#if settingsError}
             <p class="text-xs text-error mb-2">{settingsError}</p>

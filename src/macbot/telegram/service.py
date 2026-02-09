@@ -163,7 +163,8 @@ class TelegramService:
 
         model = settings.get_model()
         api_key = settings.get_api_key_for_model(model)
-        provider = LiteLLMProvider(model=model, api_key=api_key)
+        api_base = settings.get_api_base_for_model(model)
+        provider = LiteLLMProvider(model=model, api_key=api_key, api_base=api_base)
 
         response = await provider.chat(
             messages=[Message(role="user", content=text)],

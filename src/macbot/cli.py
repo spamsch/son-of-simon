@@ -883,18 +883,24 @@ def cmd_onboard(args: argparse.Namespace) -> None:
 
     # Check if already configured
     has_api_key = bool(settings.anthropic_api_key or settings.openai_api_key)
+    has_pico = settings.get_provider() == "pico"
 
-    if has_api_key:
+    if has_api_key or has_pico:
         console.print(f"[green]✓[/green] Already configured: {settings.model}")
         if not prompt_yes_no("Reconfigure?", default=False):
             pass  # Keep existing config
         else:
             has_api_key = False
+            has_pico = False
 
-    if not has_api_key:
+    if not has_api_key and not has_pico:
         choice = prompt_choice(
             "Which LLM provider would you like to use?",
-            ["OpenAI (GPT-4o) - Recommended", "Anthropic (Claude)"],
+            [
+                "OpenAI (GPT-4o) - Recommended",
+                "Anthropic (Claude)",
+                "Pico AI Server (Local, no API key needed)",
+            ],
             default=1,
         )
 
@@ -905,7 +911,7 @@ def cmd_onboard(args: argparse.Namespace) -> None:
                 env_vars["MACBOT_MODEL"] = "openai/gpt-4o"
                 env_vars["MACBOT_OPENAI_API_KEY"] = api_key
                 console.print("[green]✓ API key saved[/green]")
-        else:
+        elif choice == 2:
             console.print("\nGet your API key from: [link]https://console.anthropic.com/[/link]")
             api_key = prompt_secret("Enter your Anthropic API key")
             if api_key:
@@ -921,6 +927,58 @@ def cmd_onboard(args: argparse.Namespace) -> None:
                     console.print("[green]✓ Valid[/green]")
                 except Exception as e:
                     console.print(f"[yellow]Warning: {e}[/yellow]")
+        else:
+            # Pico AI Server (local)
+            console.print("\n[bold]Pico AI Server[/bold] runs models locally on your Mac.")
+            console.print("Install from: [link]https://apps.apple.com/app/pico-ai-server/id6502491545[/link]\n")
+
+            pico_url = console.input(
+                "Server URL [http://localhost:11434]: "
+            ).strip() or "http://localhost:11434"
+
+            # Check server connectivity
+            console.print("Checking server...", end=" ")
+            pico_models: list[str] = []
+            try:
+                resp = httpx.get(f"{pico_url}/api/tags", timeout=5.0)
+                resp.raise_for_status()
+                data = resp.json()
+                pico_models = [m["name"] for m in data.get("models", [])]
+                console.print(f"[green]✓ Connected[/green] ({len(pico_models)} models available)")
+            except Exception as e:
+                console.print(f"[yellow]✗ Could not connect: {e}[/yellow]")
+                console.print("    Make sure Pico AI Server is running and try again later.")
+
+            if pico_models:
+                console.print("\nAvailable models:")
+                display_models = pico_models[:9]  # Show up to 9
+                for i, m in enumerate(display_models, 1):
+                    console.print(f"  [{i}] {m}")
+                if len(pico_models) > 9:
+                    console.print(f"  ... and {len(pico_models) - 9} more")
+                while True:
+                    resp_str = console.input(f"\nChoose a model [1]: ").strip()
+                    if not resp_str:
+                        chosen = display_models[0]
+                        break
+                    try:
+                        idx = int(resp_str)
+                        if 1 <= idx <= len(display_models):
+                            chosen = display_models[idx - 1]
+                            break
+                    except ValueError:
+                        pass
+                    console.print("[red]Invalid choice[/red]")
+                env_vars["MACBOT_MODEL"] = f"pico/{chosen}"
+                console.print(f"[green]✓ Selected: pico/{chosen}[/green]")
+            else:
+                # No models discovered, let user type one
+                model_name = console.input(
+                    "Model name (e.g. llama3.2): "
+                ).strip() or "llama3.2"
+                env_vars["MACBOT_MODEL"] = f"pico/{model_name}"
+
+            env_vars["MACBOT_PICO_API_BASE"] = pico_url
 
     # =========================================================================
     # Step 2: macOS Permissions
@@ -1322,17 +1380,37 @@ def cmd_doctor(args: argparse.Namespace) -> None:
     # Model
     check("Model", True, settings.model)
 
-    # API Key
+    # API Key / Local Server
     provider = settings.get_provider()
-    api_key = settings.get_api_key_for_model()
-    key_name = f"MACBOT_{provider.upper()}_API_KEY"
 
-    if api_key:
-        masked = api_key[:8] + "..." + api_key[-4:] if len(api_key) > 12 else "***"
-        check("API Key", True, f"{masked}")
+    if provider == "pico":
+        # For Pico, check server reachability instead of API key
+        pico_url = settings.pico_api_base
+        check("Provider", True, f"Pico AI Server ({pico_url})")
+        try:
+            resp = httpx.get(f"{pico_url}/api/tags", timeout=5.0)
+            resp.raise_for_status()
+            data = resp.json()
+            model_names = [m["name"] for m in data.get("models", [])]
+            check("Pico Server", True, f"Connected ({len(model_names)} models)")
+            if not json_mode and model_names:
+                for m in model_names[:5]:
+                    console.print(f"    [dim]• {m}[/dim]")
+                if len(model_names) > 5:
+                    console.print(f"    [dim]... and {len(model_names) - 5} more[/dim]")
+        except Exception as e:
+            check("Pico Server", False, f"Cannot connect to {pico_url}",
+                  "Make sure Pico AI Server is running")
     else:
-        check("API Key", False, "Not set",
-              f"Set {key_name} or run 'son onboard' to configure")
+        api_key = settings.get_api_key_for_model()
+        key_name = f"MACBOT_{provider.upper()}_API_KEY"
+
+        if api_key:
+            masked = api_key[:8] + "..." + api_key[-4:] if len(api_key) > 12 else "***"
+            check("API Key", True, f"{masked}")
+        else:
+            check("API Key", False, "Not set",
+                  f"Set {key_name} or run 'son onboard' to configure")
 
     # Data directory
     data_dir = Path.home() / ".macbot"
@@ -1626,7 +1704,7 @@ def cmd_doctor(args: argparse.Namespace) -> None:
              "Run 'son onboard' or set MACBOT_PAPERLESS_URL and MACBOT_PAPERLESS_API_TOKEN")
 
     # Update config info in results
-    results["config"]["api_key_configured"] = bool(settings.get_api_key_for_model())
+    results["config"]["api_key_configured"] = bool(settings.get_api_key_for_model()) or settings.get_provider() == "pico"
     results["config"]["telegram_configured"] = bool(settings.telegram_bot_token)
     results["config"]["model"] = settings.model
     results["all_ok"] = all_ok

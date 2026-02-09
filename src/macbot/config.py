@@ -43,6 +43,12 @@ class Settings(BaseSettings):
         description="OpenRouter API key (for openrouter/* models)",
     )
 
+    # Pico AI Server settings (local inference)
+    pico_api_base: str = Field(
+        default="http://localhost:11434",
+        description="Pico AI Server URL (for pico/* models)",
+    )
+
     # Agent settings
     max_iterations: int = Field(
         default=100,
@@ -74,9 +80,17 @@ class Settings(BaseSettings):
 
 7. **Be helpful, not helpless**: You have powerful tools. Use them creatively to solve the user's problem. Think for yourself instead of bouncing questions back at the user. If there are multiple possible interpretations, pick the most likely one and go with it.
 
-8. **Focus on the current message**: In multi-turn conversations, focus ONLY on answering the user's latest message. Don't re-answer or rehash previous questions that were already addressed. The conversation history is context, not a to-do list.
+8. **Expand capabilities proactively**: When the user asks you to do something and you're not sure you can, don't just say you can't do it. Instead, follow this order:
+   1. **Check your skills first**: Review the Capabilities & Skills section in this prompt — you may already have an installed skill for it (e.g., Slack, Trello, WhatsApp). Also run `clawhub list --dir ~/.macbot/skills` to check for installed skills that may not be enabled yet. If a skill is already installed, use it immediately — don't search ClawHub for something you already have.
+   2. **Search ClawHub** for a community skill if nothing is installed: `clawhub search <keyword>`
+   3. **Search the web** using `web_search` for APIs, CLIs, or tools that could help
+   - If a ClawHub skill exists, offer to install it and use it immediately
+   - If a CLI tool or API exists, suggest how to set it up
+   - Only say "this isn't possible" after you've checked your installed skills, searched ClawHub, and found nothing
 
-9. **Only confirm destructive or costly actions**: Searching, reading, listing, and fetching information should NEVER require user confirmation. Only ask before: sending messages, creating/modifying events, making purchases, deleting things, or other actions with real-world side effects that can't be undone.
+9. **Focus on the current message**: In multi-turn conversations, focus ONLY on answering the user's latest message. Don't re-answer or rehash previous questions that were already addressed. The conversation history is context, not a to-do list.
+
+10. **Only confirm destructive or costly actions**: Searching, reading, listing, and fetching information should NEVER require user confirmation. Only ask before: sending messages, creating/modifying events, making purchases, deleting things, or other actions with real-world side effects that can't be undone.
 
 ## Memory & Context
 
@@ -217,12 +231,30 @@ Before starting a task, check `get_agent_memory` to see recent context and avoid
         model = model or self.get_model()
         provider = model.split("/")[0] if "/" in model else "openai"
 
+        if provider == "pico":
+            return None
+
         key_map = {
             "anthropic": self.anthropic_api_key,
             "openai": self.openai_api_key,
             "openrouter": self.openrouter_api_key,
         }
         return key_map.get(provider)
+
+    def get_api_base_for_model(self, model: str | None = None) -> str | None:
+        """Get the API base URL for a model's provider.
+
+        Args:
+            model: Model string (defaults to current model)
+
+        Returns:
+            API base URL or None if not needed
+        """
+        model = model or self.get_model()
+        provider = model.split("/")[0] if "/" in model else "openai"
+        if provider == "pico":
+            return self.pico_api_base
+        return None
 
     def get_cron_storage_path(self) -> Path:
         """Get the cron storage path, using default if not set."""
