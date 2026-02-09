@@ -61,8 +61,8 @@ Because it chains tools automatically, you can ask for things like:
 3. Open it and follow the setup steps
 
 The setup wizard will guide you through:
-- Connecting your AI provider (Anthropic, OpenAI, or OpenRouter)
-- Choosing a model (Claude, GPT-5, DeepSeek, Gemini, GLM, Llama, and more)
+- Connecting your AI provider (Anthropic, OpenAI, OpenRouter, or Pico for local models)
+- Choosing a model (Claude, GPT-5, DeepSeek, Gemini, Llama, or any model running locally)
 - Granting macOS permissions
 - Optional Telegram setup
 
@@ -81,7 +81,7 @@ Son of Simon comes with built-in skills for Mail, Calendar, Reminders, Notes, Sa
 
 ## AI providers
 
-Works with Anthropic, OpenAI, and OpenRouter (dozens of models with a single key). Pick one during setup or change it later. See [docs/AI_PROVIDERS.md](docs/AI_PROVIDERS.md) for the full model table.
+Works with cloud providers — Anthropic, OpenAI, and OpenRouter — or run models locally on your Mac with [Pico AI Server](https://apps.apple.com/app/pico-ai-server/id6502491545). No API key needed for local models. Pick a provider during setup or switch any time. See [docs/AI_PROVIDERS.md](docs/AI_PROVIDERS.md) for the full model table.
 
 ## Memory and Heartbeat
 
@@ -91,7 +91,7 @@ Son of Simon remembers context between conversations — preferences, habits, an
 
 - macOS
 - Apple apps configured (Mail, Calendar, Reminders)
-- Internet access for your AI provider
+- An AI provider: cloud API key **or** [Pico AI Server](https://apps.apple.com/app/pico-ai-server/id6502491545) for fully offline local inference
 - Optional: Telegram bot for remote access
 
 ## Secure by default
