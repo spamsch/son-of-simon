@@ -138,4 +138,8 @@ def create_default_registry() -> TaskRegistry:
     from macbot.tasks.teams import register_teams_tasks
     register_teams_tasks(registry)
 
+    # Register core preferences task
+    from macbot.tasks.preferences import register_preferences_tasks
+    register_preferences_tasks(registry)
+
     return registry
