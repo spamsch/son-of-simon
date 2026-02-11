@@ -57,6 +57,11 @@ class Agent:
         self.messages: list[Message] = []
         self.iteration = 0
 
+        # Ensure well-known directories exist
+        from macbot.core.preferences import CorePreferences
+        self._preferences = CorePreferences()
+        self._preferences.ensure_directories()
+
         # Token tracking
         self._session_input_tokens = 0
         self._session_output_tokens = 0
@@ -178,6 +183,11 @@ class Agent:
 
         # Add system context
         prompt_parts.append(self._build_system_context())
+
+        # Add core preferences (well-known directories, etc.)
+        prefs_text = self._preferences.format_for_prompt()
+        if prefs_text:
+            prompt_parts.append("\n" + prefs_text)
 
         # Add skills with their tools
         skills_text = self.skills_registry.format_for_prompt(self.task_registry)

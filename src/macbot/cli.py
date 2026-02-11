@@ -542,6 +542,8 @@ def _daemonize() -> None:
 
     # Redirect stdin/stdout/stderr to log file
     MACBOT_DIR.mkdir(parents=True, exist_ok=True)
+    from macbot.core.preferences import CorePreferences
+    CorePreferences().save_defaults()
     log_fd = os.open(str(LOG_FILE), os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o644)
     null_fd = os.open(os.devnull, os.O_RDONLY)
 
@@ -1243,6 +1245,8 @@ def cmd_onboard(args: argparse.Namespace) -> None:
     if env_vars:
         console.print("Saving configuration...")
         MACBOT_DIR.mkdir(parents=True, exist_ok=True)
+        from macbot.core.preferences import CorePreferences
+        CorePreferences().save_defaults()
 
         # Read existing env file if present
         existing_env = {}
@@ -1419,6 +1423,13 @@ def cmd_doctor(args: argparse.Namespace) -> None:
     else:
         warn("Data Directory", f"{data_dir} not found",
              "Will be created automatically on first use")
+
+    # Bootstrap preferences file if missing
+    from macbot.core.preferences import CorePreferences
+    prefs = CorePreferences()
+    prefs.save_defaults()
+    prefs_path = prefs.path
+    check("Preferences", prefs_path.exists(), str(prefs_path))
 
     # macOS Automation Scripts
     if not json_mode:
