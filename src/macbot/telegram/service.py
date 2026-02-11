@@ -8,6 +8,7 @@ import asyncio
 import logging
 import signal
 import tempfile
+import time
 from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import Any
@@ -18,6 +19,11 @@ from telegram.error import TelegramError
 from macbot.telegram.bot import TelegramBot
 
 logger = logging.getLogger(__name__)
+
+# If a single poll cycle takes longer than this (in seconds) the connection
+# is likely stale (e.g. the machine went to sleep).  The polling timeout is
+# 30 s, so anything significantly beyond that indicates a gap.
+_STALE_THRESHOLD_SECS = 45.0
 
 # PID file location
 PID_FILE = Path.home() / ".macbot" / "telegram.pid"
@@ -316,26 +322,63 @@ class TelegramService:
             raise
 
         # Main polling loop
+        consecutive_errors = 0
         while self._running:
+            poll_start = time.monotonic()
             try:
                 updates = await self.bot.get_updates(
                     offset=self._update_offset,
                     timeout=30,
                 )
 
+                elapsed = time.monotonic() - poll_start
+                consecutive_errors = 0
+
+                # Detect sleep/wake: a 30 s long-poll should never take
+                # much longer than ~32 s.  If it did, the machine likely
+                # slept and the connection pool is now stale.
+                if elapsed > _STALE_THRESHOLD_SECS:
+                    logger.warning(
+                        "Poll cycle took %.1f s (threshold %.0f s) "
+                        "— likely sleep/wake, refreshing connection",
+                        elapsed,
+                        _STALE_THRESHOLD_SECS,
+                    )
+                    await self.bot.refresh()
+
                 for update in updates:
                     # Update offset to acknowledge receipt
                     self._update_offset = update.update_id + 1
                     await self._process_update(update)
 
-            except TelegramError as e:
-                logger.error(f"Telegram error: {e}")
-                await asyncio.sleep(5)  # Back off on error
             except asyncio.CancelledError:
                 break
-            except Exception as e:
-                logger.exception(f"Unexpected error in polling loop: {e}")
-                await asyncio.sleep(5)
+            except (TelegramError, Exception) as e:
+                consecutive_errors += 1
+                elapsed = time.monotonic() - poll_start
+
+                is_telegram = isinstance(e, TelegramError)
+                label = "Telegram error" if is_telegram else "Unexpected error"
+                if is_telegram:
+                    logger.error(f"{label}: {e}")
+                else:
+                    logger.exception(f"{label}: {e}")
+
+                # After sleep/wake, errors are expected because the
+                # connection pool holds dead sockets — refresh eagerly.
+                if elapsed > _STALE_THRESHOLD_SECS:
+                    logger.warning(
+                        "Error after %.1f s gap — refreshing connection",
+                        elapsed,
+                    )
+                    await self.bot.refresh()
+                    consecutive_errors = 0
+                    continue  # retry immediately with fresh connection
+
+                # Exponential backoff: 2, 4, 8, … capped at 60 s
+                backoff = min(2 ** consecutive_errors, 60)
+                logger.info("Backing off for %d s (attempt %d)", backoff, consecutive_errors)
+                await asyncio.sleep(backoff)
 
         # Cleanup
         if write_pid and PID_FILE.exists():

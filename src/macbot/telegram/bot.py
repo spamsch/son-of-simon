@@ -9,8 +9,28 @@ from typing import Any
 
 from telegram import Bot, Update
 from telegram.error import TelegramError
+from telegram.request import HTTPXRequest
 
 logger = logging.getLogger(__name__)
+
+# HTTP-level timeouts (seconds).  These are independent of the Telegram
+# long-polling timeout and ensure that stale / half-open TCP connections
+# (e.g. after macOS sleep/wake) fail fast instead of hanging.
+_CONNECT_TIMEOUT = 10.0
+_READ_TIMEOUT = 10.0
+_WRITE_TIMEOUT = 10.0
+_POOL_TIMEOUT = 5.0
+
+
+def _make_bot(token: str) -> Bot:
+    """Create a Bot instance with explicit HTTP timeouts."""
+    request = HTTPXRequest(
+        connect_timeout=_CONNECT_TIMEOUT,
+        read_timeout=_READ_TIMEOUT,
+        write_timeout=_WRITE_TIMEOUT,
+        pool_timeout=_POOL_TIMEOUT,
+    )
+    return Bot(token=token, request=request)
 
 
 class TelegramBot:
@@ -27,7 +47,7 @@ class TelegramBot:
             token: Telegram bot token from @BotFather
         """
         self.token = token
-        self._bot = Bot(token=token)
+        self._bot = _make_bot(token)
 
     async def get_me(self) -> dict[str, Any]:
         """Get information about the bot.
@@ -130,6 +150,19 @@ class TelegramBot:
             allowed_updates=["message"],  # Includes text, voice, and other message types
         )
         return list(updates)
+
+    async def refresh(self) -> None:
+        """Shut down the current connection pool and create a fresh Bot.
+
+        Call this after detecting a stale connection (e.g. after sleep/wake)
+        to flush dead TCP sockets from the httpx pool.
+        """
+        try:
+            await self._bot.shutdown()
+        except Exception:
+            pass  # best-effort; the old connection is dead anyway
+        self._bot = _make_bot(self.token)
+        logger.info("Telegram bot connection refreshed")
 
     async def close(self) -> None:
         """Close the bot connection."""
