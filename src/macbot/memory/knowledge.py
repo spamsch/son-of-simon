@@ -199,8 +199,11 @@ class KnowledgeMemory:
         """
         return self.load()
 
-    def format_for_prompt(self) -> str:
+    def format_for_prompt(self, max_items: int | None = None) -> str:
         """Format memory as markdown text for system prompt injection.
+
+        Args:
+            max_items: If set, limit each section to the most recent N items.
 
         Returns:
             Markdown-formatted string, or empty string if no memory
@@ -210,23 +213,32 @@ class KnowledgeMemory:
         sections = []
 
         # Lessons learned
-        if data["lessons_learned"]:
+        lessons = data["lessons_learned"]
+        if max_items is not None:
+            lessons = lessons[-max_items:]
+        if lessons:
             lines = ["### Lessons Learned"]
-            for item in data["lessons_learned"]:
+            for item in lessons:
                 lines.append(f"- **{item['topic']}**: {item['lesson']}")
             sections.append("\n".join(lines))
 
         # User preferences
-        if data["user_preferences"]:
+        preferences = data["user_preferences"]
+        if max_items is not None:
+            preferences = preferences[-max_items:]
+        if preferences:
             lines = ["### User Preferences"]
-            for item in data["user_preferences"]:
+            for item in preferences:
                 lines.append(f"- **{item['category']}**: {item['preference']}")
             sections.append("\n".join(lines))
 
         # User facts
-        if data["user_facts"]:
+        facts = data["user_facts"]
+        if max_items is not None:
+            facts = facts[-max_items:]
+        if facts:
             lines = ["### User Facts"]
-            for item in data["user_facts"]:
+            for item in facts:
                 lines.append(f"- {item['fact']}")
             sections.append("\n".join(lines))
 

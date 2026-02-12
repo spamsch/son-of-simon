@@ -282,11 +282,12 @@ class SkillsRegistry:
 
         return schemas
 
-    def format_for_prompt(self, task_registry: TaskRegistry | None = None) -> str:
+    def format_for_prompt(self, task_registry: TaskRegistry | None = None, compact: bool = False) -> str:
         """Format all enabled skills for the agent's system prompt.
 
         Args:
             task_registry: Optional registry to pass to skill formatting.
+            compact: If True, use compact formatting (no examples/body).
 
         Returns:
             Formatted skills section for the system prompt
@@ -295,12 +296,18 @@ class SkillsRegistry:
         if not enabled:
             return ""
 
-        lines = ["\n## Capabilities & Skills\n"]
-        lines.append("You have the following capabilities. Each one is a built-in feature you can use. "
-                      "When listing your capabilities to the user, include ALL of these:\n")
+        if compact:
+            lines = ["\n## Skills\n"]
+        else:
+            lines = ["\n## Capabilities & Skills\n"]
+            lines.append("You have the following capabilities. Each one is a built-in feature you can use. "
+                          "When listing your capabilities to the user, include ALL of these:\n")
 
         for skill in sorted(enabled, key=lambda s: s.name):
-            lines.append(skill.format_for_prompt(task_registry))
+            if compact:
+                lines.append(skill.format_for_prompt_compact())
+            else:
+                lines.append(skill.format_for_prompt(task_registry))
             lines.append("")  # Blank line between skills
 
         return "\n".join(lines)
