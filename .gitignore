@@ -67,4 +67,4 @@ app/src-tauri/target/
 app/.svelte-kit/
 app/build/
 
-.superset
+.superset/
