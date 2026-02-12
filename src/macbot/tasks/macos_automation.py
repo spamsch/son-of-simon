@@ -1335,6 +1335,83 @@ class SpotlightSearchTask(Task):
 
 
 # =============================================================================
+# FINDER TASKS
+# =============================================================================
+
+class ListDirectoryTask(Task):
+    """List files in a directory with metadata, pagination, and summary."""
+
+    @property
+    def name(self) -> str:
+        return "list_directory"
+
+    @property
+    def description(self) -> str:
+        return (
+            "List files in a directory with metadata (name, size, date, type). "
+            "Use summary=True for a quick overview with counts by type and age. "
+            "Supports pagination with offset/limit for large directories. "
+            "Use filter_type to list only specific categories: images, documents, "
+            "spreadsheets, archives, installers, videos, audio, code. "
+            "Use dirs_only=True to list subdirectories instead of files, with metadata "
+            "(size, item count, contents breakdown). Skips known category folders."
+        )
+
+    async def execute(
+        self,
+        directory: str = "~/Downloads",
+        offset: int = 0,
+        limit: int = 50,
+        sort_by: str = "date",
+        sort_order: str = "desc",
+        filter_type: str | None = None,
+        summary: bool = False,
+        include_hidden: bool = False,
+        dirs_only: bool = False,
+    ) -> dict[str, Any]:
+        """List files in a directory with metadata and pagination.
+
+        Args:
+            directory: Directory to list (default: ~/Downloads).
+            offset: Skip first N entries for pagination.
+            limit: Maximum entries to return (default: 50).
+            sort_by: Sort field: "name", "size", "date", or "type".
+            sort_order: Sort order: "asc" or "desc" (default: desc, newest first).
+            filter_type: Filter by category: images, documents, spreadsheets, archives, installers, videos, audio, code.
+            summary: If True, return a high-level overview with counts by type and age instead of individual files.
+            include_hidden: Include dotfiles (hidden files).
+            dirs_only: If True, list subdirectories instead of files. Shows size, item count, and contents breakdown. Skips known category folders (Images/, Documents/, etc.).
+
+        Returns:
+            Dictionary with file listing or summary.
+        """
+        args = ["--dir", os.path.expanduser(directory)]
+
+        if dirs_only:
+            args.append("--dirs-only")
+
+        if summary:
+            args.append("--summary")
+        else:
+            if offset > 0:
+                args.extend(["--offset", str(offset)])
+            if limit != 50:
+                args.extend(["--limit", str(limit)])
+            if sort_by != "date":
+                args.extend(["--sort", sort_by])
+            if sort_order != "desc":
+                args.extend(["--order", sort_order])
+            if filter_type:
+                args.extend(["--filter-type", filter_type])
+
+        if include_hidden:
+            args.append("--include-hidden")
+
+        timeout = 60 if dirs_only else 30
+        return await run_script("finder/list-directory.sh", args, timeout=timeout)
+
+
+# =============================================================================
 # SHORTCUTS TASKS
 # =============================================================================
 
@@ -1533,6 +1610,9 @@ def register_macos_tasks(registry) -> None:
 
     # Spotlight tasks
     registry.register(SpotlightSearchTask())
+
+    # Finder tasks
+    registry.register(ListDirectoryTask())
 
     # Shortcuts tasks
     registry.register(ListShortcutsTask())
