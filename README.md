@@ -50,10 +50,16 @@ For a detailed comparison with OpenClaw, see [docs/COMPARISON.md](docs/COMPARISO
 
 **Files** — read, write, and search files on disk
 
+**Downloads** — organize your Downloads folder by sorting files and subdirectories into categorized subfolders
+
+**Data Apps** — create interactive HTML dashboards and data viewers from CSV files, JSON, bank statements, or public APIs
+
 Because it chains tools automatically, you can ask for things like:
 - *"My mom sent me her vacation dates by email — add them to my calendar"*
 - *"Summarize my unread emails and send me a Telegram message with the highlights"*
 - *"Find the PDF invoice from last week and upload it to Paperless"*
+- *"Organize my Downloads folder and sort everything by type"*
+- *"Find the bank statement CSV in my Downloads and create a spending dashboard from it"*
 
 ## Get started
 
@@ -78,7 +84,7 @@ First success (safe demo prompts):
 
 ## Skills
 
-Son of Simon comes with built-in skills for Mail, Calendar, Reminders, Notes, Safari, and Browser Automation. Skills use the [AgentSkills standard](https://agentskills.io) — community skills from [ClawHub](https://clawhub.ai) work out of the box. See [docs/SKILLS.md](docs/SKILLS.md) for custom skills, CLI commands, and ClawHub install instructions.
+Son of Simon comes with built-in skills for Mail, Calendar, Reminders, Notes, Safari, Browser Automation, Downloads Organizer, and Data App Creator. Skills use the [AgentSkills standard](https://agentskills.io) — community skills from [ClawHub](https://clawhub.ai) work out of the box. See [docs/SKILLS.md](docs/SKILLS.md) for custom skills, CLI commands, and ClawHub install instructions.
 
 ## AI providers
 
