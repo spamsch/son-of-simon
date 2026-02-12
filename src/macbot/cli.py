@@ -1603,6 +1603,66 @@ def cmd_doctor(args: argparse.Namespace) -> None:
     except Exception as e:
         warn("Safari JavaScript", f"Could not test: {str(e)[:40]}")
 
+    # Developer Tools
+    if not json_mode:
+        console.print("\n[bold]Developer Tools[/bold]")
+
+    results["dev_tools"] = {}
+
+    brew_path = shutil.which("brew")
+    if brew_path:
+        try:
+            brew_out = subprocess.run(["brew", "--version"], capture_output=True, text=True, timeout=5)
+            brew_ver = brew_out.stdout.strip().split("\n")[0].replace("Homebrew ", "") if brew_out.returncode == 0 else "unknown"
+            check("Homebrew", True, f"{brew_ver} ({brew_path})")
+            results["dev_tools"]["homebrew"] = {"installed": True, "version": brew_ver, "path": brew_path}
+        except Exception:
+            check("Homebrew", True, brew_path)
+            results["dev_tools"]["homebrew"] = {"installed": True, "version": "unknown", "path": brew_path}
+    else:
+        warn("Homebrew", "Not installed",
+             "Install from https://brew.sh")
+        results["dev_tools"]["homebrew"] = {"installed": False}
+
+    python3_path = shutil.which("python3")
+    if python3_path:
+        try:
+            py_out = subprocess.run(["python3", "--version"], capture_output=True, text=True, timeout=5)
+            py_ver = py_out.stdout.strip().replace("Python ", "") if py_out.returncode == 0 else "unknown"
+            check("Python 3", True, f"{py_ver} ({python3_path})")
+            results["dev_tools"]["python3"] = {"installed": True, "version": py_ver, "path": python3_path}
+        except Exception:
+            check("Python 3", True, python3_path)
+            results["dev_tools"]["python3"] = {"installed": True, "version": "unknown", "path": python3_path}
+    else:
+        warn("Python 3", "Not installed",
+             "Install with: brew install python3")
+        results["dev_tools"]["python3"] = {"installed": False}
+
+    node_path = shutil.which("node")
+    if node_path:
+        try:
+            node_out = subprocess.run(["node", "--version"], capture_output=True, text=True, timeout=5)
+            node_ver = node_out.stdout.strip().replace("v", "") if node_out.returncode == 0 else "unknown"
+            check("Node.js", True, f"{node_ver} ({node_path})")
+            results["dev_tools"]["node"] = {"installed": True, "version": node_ver, "path": node_path}
+        except Exception:
+            check("Node.js", True, node_path)
+            results["dev_tools"]["node"] = {"installed": True, "version": "unknown", "path": node_path}
+    else:
+        warn("Node.js", "Not installed",
+             "Install with: brew install node")
+        results["dev_tools"]["node"] = {"installed": False}
+
+    npx_path = shutil.which("npx")
+    if npx_path:
+        check("npx", True, npx_path)
+        results["dev_tools"]["npx"] = {"installed": True, "path": npx_path}
+    else:
+        warn("npx", "Not installed (comes with Node.js)",
+             "Install Node.js to get npx")
+        results["dev_tools"]["npx"] = {"installed": False}
+
     # Tasks
     if not json_mode:
         console.print("\n[bold]Tasks[/bold]")

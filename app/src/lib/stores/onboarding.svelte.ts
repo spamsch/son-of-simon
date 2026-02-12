@@ -17,10 +17,28 @@ export interface TelegramData {
   skipped: boolean;
 }
 
+export interface DevToolInfo {
+  installed: boolean;
+  version: string;
+}
+
+export interface NpxInfo {
+  installed: boolean;
+}
+
+export interface DevToolsData {
+  homebrew: DevToolInfo;
+  python: DevToolInfo;
+  node: DevToolInfo;
+  npx: NpxInfo;
+  skipped: boolean;
+}
+
 export interface OnboardingData {
   permissions: PermissionsData;
   api_key: ApiKeyData;
   telegram: TelegramData;
+  dev_tools: DevToolsData;
 }
 
 export interface OnboardingState {
@@ -30,15 +48,16 @@ export interface OnboardingState {
   data: OnboardingData;
 }
 
-export type Step = "welcome" | "permissions" | "apikey" | "telegram" | "complete";
+export type Step = "welcome" | "permissions" | "apikey" | "telegram" | "devtools" | "complete";
 
-export const STEPS: Step[] = ["welcome", "permissions", "apikey", "telegram", "complete"];
+export const STEPS: Step[] = ["welcome", "permissions", "apikey", "telegram", "devtools", "complete"];
 
 export const STEP_LABELS: Record<Step, string> = {
   welcome: "Welcome",
   permissions: "Permissions",
   apikey: "API Key",
   telegram: "Telegram",
+  devtools: "Dev Tools",
   complete: "Complete",
 };
 
@@ -66,6 +85,13 @@ function createDefaultState(): OnboardingState {
       },
       telegram: {
         configured: false,
+        skipped: false,
+      },
+      dev_tools: {
+        homebrew: { installed: false, version: "" },
+        python: { installed: false, version: "" },
+        node: { installed: false, version: "" },
+        npx: { installed: false },
         skipped: false,
       },
     },
@@ -161,6 +187,14 @@ class OnboardingStore {
     this._state.data.telegram = {
       ...this._state.data.telegram,
       ...telegram,
+    };
+    await this.save();
+  }
+
+  async updateDevTools(devTools: Partial<DevToolsData>) {
+    this._state.data.dev_tools = {
+      ...this._state.data.dev_tools,
+      ...devTools,
     };
     await this.save();
   }

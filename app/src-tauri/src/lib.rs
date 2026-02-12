@@ -16,6 +16,8 @@ pub struct OnboardingData {
     pub permissions: PermissionsData,
     pub api_key: ApiKeyData,
     pub telegram: TelegramData,
+    #[serde(default)]
+    pub dev_tools: DevToolsData,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -35,6 +37,38 @@ pub struct ApiKeyData {
 pub struct TelegramData {
     pub configured: bool,
     pub skipped: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DevToolInfo {
+    pub installed: bool,
+    pub version: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NpxInfo {
+    pub installed: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DevToolsData {
+    pub homebrew: DevToolInfo,
+    pub python: DevToolInfo,
+    pub node: DevToolInfo,
+    pub npx: NpxInfo,
+    pub skipped: bool,
+}
+
+impl Default for DevToolsData {
+    fn default() -> Self {
+        Self {
+            homebrew: DevToolInfo { installed: false, version: String::new() },
+            python: DevToolInfo { installed: false, version: String::new() },
+            node: DevToolInfo { installed: false, version: String::new() },
+            npx: NpxInfo { installed: false },
+            skipped: false,
+        }
+    }
 }
 
 impl Default for OnboardingState {
@@ -64,6 +98,7 @@ impl Default for OnboardingState {
                     configured: false,
                     skipped: false,
                 },
+                dev_tools: DevToolsData::default(),
             },
         }
     }
