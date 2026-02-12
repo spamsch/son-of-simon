@@ -49,6 +49,13 @@ class Settings(BaseSettings):
         description="Pico AI Server URL (for pico/* models)",
     )
 
+    # Context profile for controlling prompt size
+    context_profile: str = Field(
+        default="auto",
+        description="Context profile: auto, full, compact, minimal. "
+                    "auto=full for cloud, compact for pico/* models",
+    )
+
     # Agent settings
     max_iterations: int = Field(
         default=100,
@@ -210,6 +217,16 @@ Before starting a task, check `get_agent_memory` to see recent context and avoid
             Model string like 'anthropic/claude-sonnet-4-20250514'
         """
         return self.model
+
+    def get_context_profile(self) -> str:
+        """Resolve the effective context profile.
+
+        Returns:
+            'full', 'compact', or 'minimal'
+        """
+        if self.context_profile != "auto":
+            return self.context_profile
+        return "compact" if self.get_provider() == "pico" else "full"
 
     def get_provider(self) -> str:
         """Get the provider name from the model string.

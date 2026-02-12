@@ -134,6 +134,27 @@ class Skill(BaseModel):
 
         return "\n".join(lines)
 
+    def format_for_prompt_compact(self) -> str:
+        """Format this skill compactly for reduced-context profiles.
+
+        Returns only essential info: name, description, tools, defaults,
+        and confirmation rules. No examples, no body.
+        """
+        lines = [f"### {self.name}"]
+        lines.append(self.description)
+
+        if self.tasks:
+            lines.append(f"**Tools:** {', '.join(self.tasks)}")
+
+        if self.safe_defaults:
+            defaults_str = ", ".join(f"{k}={v}" for k, v in self.safe_defaults.items())
+            lines.append(f"**Defaults:** {defaults_str}")
+
+        if self.confirm_before_write:
+            lines.append(f"**Confirm before:** {', '.join(self.confirm_before_write)}")
+
+        return "\n".join(lines)
+
 
 class SkillsConfig(BaseModel):
     """Configuration for skills enable/disable state.

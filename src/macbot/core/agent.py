@@ -171,13 +171,26 @@ class Agent:
     def _build_system_prompt(self) -> str:
         """Build a dynamic system prompt with platform and skills context.
 
-        The prompt is structured as:
+        Dispatches to profile-specific builders based on context_profile setting.
+        """
+        profile = self.config.get_context_profile()
+        if profile == "compact":
+            return self._build_compact_system_prompt()
+        elif profile == "minimal":
+            return self._build_minimal_system_prompt()
+        return self._build_full_system_prompt()
+
+    def _build_full_system_prompt(self) -> str:
+        """Build the full system prompt (default for cloud models).
+
+        Includes all sections:
         1. Base prompt (Core Principles from config)
         2. System context (platform info)
-        3. Skills section (with their tools and guidance)
-        4. Agent memory guidance
-        5. Important rules
-        6. Knowledge memory
+        3. Preferences
+        4. Skills (full formatting with examples/body)
+        5. Agent memory guidance
+        6. Important rules
+        7. Knowledge memory (uncapped)
         """
         prompt_parts = [self.config.agent_system_prompt]
 
@@ -204,6 +217,62 @@ class Agent:
         from macbot.memory import KnowledgeMemory
         knowledge = KnowledgeMemory()
         memory_text = knowledge.format_for_prompt()
+        if memory_text:
+            prompt_parts.append("\n" + memory_text)
+
+        return "\n".join(prompt_parts)
+
+    def _build_compact_system_prompt(self) -> str:
+        """Build a compact system prompt for local models.
+
+        Drastically reduces token count by:
+        - Using a ~40-token base prompt instead of ~1,500
+        - Using compact skill formatting (no examples/body)
+        - Skipping memory guidance and important rules
+        - Capping knowledge memory to 10 items per section
+        """
+        prompt_parts = [
+            "You are Son of Simon, a macOS automation assistant. "
+            "Call tools immediately — don't explain plans. "
+            "Check memory before searching. Confirm before destructive actions."
+        ]
+
+        prompt_parts.append(self._build_system_context())
+
+        prefs_text = self._preferences.format_for_prompt()
+        if prefs_text:
+            prompt_parts.append("\n" + prefs_text)
+
+        skills_text = self.skills_registry.format_for_prompt(self.task_registry, compact=True)
+        if skills_text:
+            prompt_parts.append(skills_text)
+
+        from macbot.memory import KnowledgeMemory
+        knowledge = KnowledgeMemory()
+        memory_text = knowledge.format_for_prompt(max_items=10)
+        if memory_text:
+            prompt_parts.append("\n" + memory_text)
+
+        return "\n".join(prompt_parts)
+
+    def _build_minimal_system_prompt(self) -> str:
+        """Build a minimal system prompt for very constrained models.
+
+        Absolute minimum context:
+        - 1-sentence base prompt
+        - System context only
+        - No skills, preferences, memory guidance, or rules
+        - Knowledge memory capped to 3 items per section
+        """
+        prompt_parts = [
+            "You are a macOS assistant. Use tools to help the user."
+        ]
+
+        prompt_parts.append(self._build_system_context())
+
+        from macbot.memory import KnowledgeMemory
+        knowledge = KnowledgeMemory()
+        memory_text = knowledge.format_for_prompt(max_items=3)
         if memory_text:
             prompt_parts.append("\n" + memory_text)
 
@@ -279,10 +348,67 @@ On subsequent requests for the same site, **check memory first** (`memory_list`)
 - **Before saying "I can't do this"**: First check your Capabilities & Skills section and run `clawhub list --dir ~/.macbot/skills` to see if a skill is already installed. If it is, use it — don't search ClawHub for something you already have. If nothing is installed, search ClawHub (`clawhub search <keyword>`) for a community skill. Also consider using `web_search` to find relevant APIs or CLI tools. Only tell the user something isn't possible after you've checked installed skills, searched ClawHub, and found no options.
 """
 
+    def _get_tool_schemas(self) -> list[dict[str, Any]]:
+        """Get tool schemas appropriate for the current context profile."""
+        profile = self.config.get_context_profile()
+
+        if profile == "full":
+            return self.task_registry.get_tool_schemas()
+
+        # compact/minimal: use only tools from enabled skills
+        schemas = self.skills_registry.get_all_tool_schemas(self.task_registry)
+
+        if profile in ("compact", "minimal"):
+            # Strip parameter descriptions to save tokens
+            for schema in schemas:
+                params = schema.get("parameters", {})
+                props = params.get("properties", {})
+                for prop in props.values():
+                    prop.pop("description", None)
+
+        return schemas
+
+    def _cap_messages(self, messages: list[Message]) -> list[Message]:
+        """Cap conversation history based on context profile.
+
+        Preserves the first user message (the goal) and keeps
+        tool_call/tool_result pairs together.
+        """
+        profile = self.config.get_context_profile()
+
+        if profile == "full":
+            return messages
+
+        max_messages = 10 if profile == "compact" else 4
+
+        if len(messages) <= max_messages:
+            return messages
+
+        # Always keep the first user message (the goal)
+        first_msg = messages[0]
+        tail = messages[-(max_messages - 1):]
+
+        # Ensure we don't start with an orphaned tool result
+        # Walk forward to find a clean boundary
+        start = 0
+        while start < len(tail):
+            if tail[start].role == "tool":
+                start += 1
+            elif tail[start].role == "assistant" and tail[start].tool_calls:
+                # This is an assistant tool_call — check if its results follow
+                # Keep it, the results should be right after
+                break
+            else:
+                break
+
+        capped = [first_msg] + tail[start:]
+        return capped
+
     async def _get_llm_response(self, stream: bool = False, verbose: bool = False) -> LLMResponse:
         """Get a response from the LLM."""
-        tools = self.task_registry.get_tool_schemas()
+        tools = self._get_tool_schemas()
         system_prompt = self._build_system_prompt()
+        messages = self._cap_messages(self.messages)
 
         stream_callback = None
         if stream:
@@ -296,7 +422,7 @@ On subsequent requests for the same site, **check memory first** (`memory_list`)
                 console.print(text, end="", highlight=False)
 
         response = await self.provider.chat(
-            messages=self.messages,
+            messages=messages,
             tools=tools if tools else None,
             system_prompt=system_prompt,
             stream_callback=stream_callback,
@@ -400,13 +526,28 @@ On subsequent requests for the same site, **check memory first** (`memory_list`)
             self.messages.append(tool_msg)
 
     def _format_tool_result(self, result: TaskResult) -> str:
-        """Format a task result as a string for the LLM."""
+        """Format a task result as a string for the LLM.
+
+        Applies truncation based on context profile:
+        - full: no truncation
+        - compact: max 2,000 chars
+        - minimal: max 500 chars
+        """
         if result.success:
             if isinstance(result.output, (dict, list)):
-                return json.dumps(result.output)
-            return str(result.output)
+                text = json.dumps(result.output)
+            else:
+                text = str(result.output)
         else:
-            return f"Error: {result.error}"
+            text = f"Error: {result.error}"
+
+        profile = self.config.get_context_profile()
+        max_chars = {"compact": 2000, "minimal": 500}.get(profile)
+
+        if max_chars and len(text) > max_chars:
+            text = text[:max_chars] + "... (truncated)"
+
+        return text
 
     def _condense_history(self) -> None:
         """Condense completed exchanges to just user/assistant text pairs.
