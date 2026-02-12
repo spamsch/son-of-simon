@@ -28,33 +28,47 @@ For a detailed comparison with OpenClaw, see [docs/COMPARISON.md](docs/COMPARISO
 
 ## What it can do
 
-**Mail** — search, read, send, archive, download attachments across all accounts
+<p align="center">
+  <img src="docs/images/comic-what-it-can-do.png" alt="Son of Simon in action — Email to Calendar, Smart Summary, Find & File, Organize" width="600">
+</p>
 
-**Calendar & Reminders** — create events, check your schedule, set reminders, mark them done
+### Apple Apps
 
-**Notes** — create, search, organize into folders, move and delete notes
+| App | Capabilities |
+|---|---|
+| **Mail** | Search, read, send, archive, download attachments — all accounts |
+| **Calendar** | Create events, check your schedule, find conflicts |
+| **Reminders** | Set reminders, mark done, organize lists |
+| **Notes** | Create, search, organize into folders, move, delete |
+| **Safari** | Open URLs, read pages, click buttons, fill forms, take screenshots, run JS |
 
-**Safari & Browser** — open URLs, read pages, click buttons, fill forms, take screenshots, run JavaScript
+### Messaging
 
-**WhatsApp** — read chats, search messages, send replies via `whatsapp-cli`
+| App | Capabilities |
+|---|---|
+| **Telegram** | Send & receive text or voice messages, use as remote control for the agent |
+| **WhatsApp** | Read chats, search messages, send replies (via `whatsapp-cli`) |
+| **Microsoft Teams** | List teams/channels, read & send channel and chat messages (multi-account) |
 
-**Telegram** — send and receive messages (text or voice), use as remote control for the agent. Voice messages (both transcription and voice replies) require an OpenAI API key.
+### Files & Data
 
-**Microsoft Teams** — list teams and channels, read and send channel and chat messages (multi-account)
+| Tool | Capabilities |
+|---|---|
+| **Spotlight** | Find files by name, content, type, or recently opened |
+| **Files** | Read, write, and search files on disk |
+| **Downloads** | Auto-organize your Downloads folder into categorized subfolders |
+| **Data Apps** | Create interactive HTML dashboards from CSV, JSON, bank statements, or APIs |
 
-**Spotlight** — find files by name, content, type, or recently opened
+### Web & Services
 
-**Paperless-ngx** — search, upload, download, and tag documents
+| Service | Capabilities |
+|---|---|
+| **Web** | Google search, fetch URLs, read Hacker News |
+| **Paperless-ngx** | Search, upload, download, and tag documents |
 
-**Web** — Google search, fetch URLs, read Hacker News
+### Chained actions
 
-**Files** — read, write, and search files on disk
-
-**Downloads** — organize your Downloads folder by sorting files and subdirectories into categorized subfolders
-
-**Data Apps** — create interactive HTML dashboards and data viewers from CSV files, JSON, bank statements, or public APIs
-
-Because it chains tools automatically, you can ask for things like:
+Because it chains tools automatically, you can ask things like:
 - *"My mom sent me her vacation dates by email — add them to my calendar"*
 - *"Summarize my unread emails and send me a Telegram message with the highlights"*
 - *"Find the PDF invoice from last week and upload it to Paperless"*
