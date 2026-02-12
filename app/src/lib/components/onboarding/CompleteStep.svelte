@@ -18,6 +18,15 @@
     return "OpenRouter";
   }
 
+  function devToolsSummary(): { value: string; done: boolean } {
+    const dt = onboardingStore.state.data.dev_tools;
+    if (!dt) return { value: "Not configured", done: false };
+    const count = [dt.homebrew?.installed, dt.python?.installed, dt.node?.installed].filter(Boolean).length;
+    if (count === 3) return { value: "All tools installed", done: true };
+    if (count > 0) return { value: `${count}/3 tools installed`, done: false };
+    return { value: "Not configured", done: false };
+  }
+
   const summary = $derived([
     {
       label: "AI Provider",
@@ -30,6 +39,10 @@
         ? "Telegram connected"
         : "Not configured",
       done: onboardingStore.state.data.telegram.configured,
+    },
+    {
+      label: "Developer Tools",
+      ...devToolsSummary(),
     },
   ]);
 

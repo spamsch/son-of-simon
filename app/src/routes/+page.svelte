@@ -6,6 +6,7 @@
     PermissionsStep,
     ApiKeyStep,
     TelegramStep,
+    DevToolsStep,
     CompleteStep,
   } from "$lib/components/onboarding";
   import Dashboard from "./Dashboard.svelte";
@@ -80,6 +81,8 @@
             <ApiKeyStep onNext={nextStep} onBack={prevStep} />
           {:else if currentStep === "telegram"}
             <TelegramStep onNext={nextStep} onBack={prevStep} />
+          {:else if currentStep === "devtools"}
+            <DevToolsStep onNext={nextStep} onBack={prevStep} />
           {:else if currentStep === "complete"}
             <CompleteStep onLaunch={launchDashboard} />
           {/if}
