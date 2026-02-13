@@ -780,19 +780,25 @@ class CreateNoteTask(Task):
         self,
         title: str,
         body: str,
-        folder: str = "Notes"
+        folder: str = "Notes",
+        html: bool = False
     ) -> dict[str, Any]:
         """Create a note.
 
         Args:
             title: Note title.
-            body: Note body content.
+            body: Note body content (plain text or HTML).
             folder: Folder name (default: "Notes").
+            html: If True, treat body as HTML. Use <ul><li> for bullet lists,
+                  <strike> for completed items. This is how todo lists are
+                  formatted in Notes.app.
 
         Returns:
             Dictionary with creation result.
         """
         args = ["--title", title, "--body", body, "--folder", folder]
+        if html:
+            args.append("--html")
         return await run_script("notes/create-note.sh", args)
 
 
