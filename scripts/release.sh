@@ -90,10 +90,78 @@ echo "  ✓ app/src-tauri/Cargo.toml"
 
 echo ""
 echo "=========================================="
+echo "Generating release notes..."
+echo "=========================================="
+
+# Find previous tag
+PREV_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+
+if [ -n "$PREV_TAG" ] && command -v claude &>/dev/null; then
+    # Collect git history since last tag
+    COMMITS=$(git log "$PREV_TAG"..HEAD --oneline)
+    DIFFSTAT=$(git diff --stat "$PREV_TAG"..HEAD)
+
+    # Generate release notes with Claude
+    NOTES=$(claude -p --model haiku "Generate release notes for v$NEW_VERSION of Son of Simon (macOS automation assistant).
+
+Here are the commits since $PREV_TAG:
+$COMMITS
+
+Here are the files changed:
+$DIFFSTAT
+
+Write concise release notes in this format:
+## What's Changed
+- **Feature/fix name** — One-sentence description
+
+Group related commits. Use bold for feature names. Keep it concise. Do not include a heading — start directly with the bullet points.")
+
+    if [ -n "$NOTES" ]; then
+        echo "$NOTES" > RELEASE_NOTES.md
+        echo ""
+        echo -e "${GREEN}Generated release notes:${NC}"
+        echo "──────────────────────────────────────────"
+        cat RELEASE_NOTES.md
+        echo "──────────────────────────────────────────"
+        echo ""
+
+        read -p "Use these release notes? [y]es / [n]o (skip) / [e]dit: " -n 1 -r
+        echo ""
+        case "$REPLY" in
+            [Ee])
+                ${EDITOR:-vim} RELEASE_NOTES.md
+                echo -e "${GREEN}  ✓ Release notes saved${NC}"
+                ;;
+            [Nn])
+                rm -f RELEASE_NOTES.md
+                echo -e "${YELLOW}  ⊘ Skipped — will use GitHub auto-generated notes${NC}"
+                ;;
+            *)
+                echo -e "${GREEN}  ✓ Release notes accepted${NC}"
+                ;;
+        esac
+    else
+        echo -e "${YELLOW}  ⊘ Claude returned empty output — skipping${NC}"
+    fi
+else
+    if [ -z "$PREV_TAG" ]; then
+        echo -e "${YELLOW}  ⊘ No previous tag found — skipping release notes${NC}"
+    else
+        echo -e "${YELLOW}  ⊘ claude CLI not found — skipping release notes${NC}"
+    fi
+fi
+
+echo ""
+echo "=========================================="
 echo "Committing changes..."
 echo "=========================================="
 
-git add pyproject.toml app/src-tauri/tauri.conf.json app/package.json app/src-tauri/Cargo.toml
+FILES_TO_ADD="pyproject.toml app/src-tauri/tauri.conf.json app/package.json app/src-tauri/Cargo.toml"
+if [ -f RELEASE_NOTES.md ]; then
+    FILES_TO_ADD="$FILES_TO_ADD RELEASE_NOTES.md"
+fi
+
+git add $FILES_TO_ADD
 git commit --no-gpg-sign -m "$COMMIT_MSG"
 echo "  ✓ Committed: $COMMIT_MSG"
 

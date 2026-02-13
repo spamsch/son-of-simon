@@ -114,11 +114,22 @@ jobs:
           name: macos-arm64-dmg
           path: Son-of-Simon-*.dmg
 
+      - name: Read release notes
+        id: release_notes
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          if [ -f RELEASE_NOTES.md ]; then
+            echo "has_notes=true" >> $GITHUB_OUTPUT
+          else
+            echo "has_notes=false" >> $GITHUB_OUTPUT
+          fi
+
       - name: Create Release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v1
         with:
           files: Son-of-Simon-*.dmg
-          generate_release_notes: true
+          body_path: ${{ steps.release_notes.outputs.has_notes == 'true' && 'RELEASE_NOTES.md' || '' }}
+          generate_release_notes: ${{ steps.release_notes.outputs.has_notes != 'true' }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
