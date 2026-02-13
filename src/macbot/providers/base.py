@@ -88,6 +88,42 @@ class LLMProvider(ABC):
         """
         ...
 
+    def get_context_window(self) -> int | None:
+        """Return the model's context window size in tokens.
+
+        Returns None if unknown. Subclasses should override with
+        provider-specific lookups.
+        """
+        return None
+
+    def estimate_tokens(
+        self,
+        messages: list[Message],
+        system_prompt: str | None = None,
+        tools: list[dict[str, Any]] | None = None,
+    ) -> int:
+        """Estimate token count for a request payload.
+
+        Conservative character-based heuristic (total_chars // 3).
+        Subclasses should override with provider-specific tokenisers.
+        """
+        total_chars = 0
+        if system_prompt:
+            total_chars += len(system_prompt)
+        for msg in messages:
+            if isinstance(msg.content, str):
+                total_chars += len(msg.content)
+            elif isinstance(msg.content, list):
+                for block in msg.content:
+                    if isinstance(block, dict):
+                        total_chars += len(str(block))
+            if msg.tool_calls:
+                for tc in msg.tool_calls:
+                    total_chars += len(tc.name) + len(str(tc.arguments))
+        if tools:
+            total_chars += len(str(tools))
+        return total_chars // 3
+
     @abstractmethod
     def format_tool_result(self, tool_call_id: str, result: str) -> Message:
         """Format a tool result as a message.
