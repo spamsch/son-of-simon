@@ -338,6 +338,29 @@ tell application "Mail"
             on error
                 set output to output & "Content: [Unable to retrieve content]" & return
             end try
+
+            -- Extract links from HTML source (plain text rendering loses href URLs)
+            try
+                set msgSource to source of msg
+                set tmpFile to (do shell script "mktemp /tmp/macbot_mail_XXXXXX")
+                try
+                    set fh to open for access POSIX file tmpFile with write permission
+                    write msgSource to fh as «class utf8»
+                    close access fh
+                on error
+                    try
+                        close access fh
+                    end try
+                end try
+                set extractedLinks to do shell script "python3 " & quoted form of "$SCRIPT_DIR/extract-links.py" & " " & quoted form of tmpFile & "; rm -f " & quoted form of tmpFile
+                if extractedLinks is not "" then
+                    set output to output & "Links:" & return & extractedLinks & return
+                end if
+            on error
+                try
+                    do shell script "rm -f " & quoted form of tmpFile
+                end try
+            end try
         end if
 
         set output to output & "---" & return
