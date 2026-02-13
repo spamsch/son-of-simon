@@ -4,6 +4,7 @@ import { invoke } from "@tauri-apps/api/core";
 export interface PermissionsData {
   accessibility: boolean;
   automation: Record<string, boolean>;
+  folder_access: Record<string, boolean>;
 }
 
 export interface ApiKeyData {
@@ -76,6 +77,11 @@ function createDefaultState(): OnboardingState {
           Reminders: false,
           Notes: false,
           Safari: false,
+        },
+        folder_access: {
+          Documents: false,
+          Downloads: false,
+          Desktop: false,
         },
       },
       api_key: {

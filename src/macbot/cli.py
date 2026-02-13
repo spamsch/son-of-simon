@@ -1681,6 +1681,32 @@ def cmd_doctor(args: argparse.Namespace) -> None:
     check("Safari.app", ok, msg,
           "Grant access in System Settings > Privacy & Security > Automation" if not ok else None)
 
+    # Folder Access
+    if not json_mode:
+        console.print("\n[bold]Folder Access[/bold]")
+
+    results["permissions"]["folder_access"] = {}
+    home_dir = Path.home()
+    for folder_name in ["Documents", "Downloads", "Desktop"]:
+        folder_path = home_dir / folder_name
+        try:
+            os.listdir(folder_path)
+            accessible = True
+            msg = str(folder_path)
+        except PermissionError:
+            accessible = False
+            msg = "Permission denied"
+        except FileNotFoundError:
+            accessible = False
+            msg = "Folder not found"
+        except Exception as e:
+            accessible = False
+            msg = str(e)[:60]
+
+        results["permissions"]["folder_access"][folder_name] = accessible
+        check(f"~/{folder_name}", accessible, msg,
+              "Grant access in System Settings > Privacy & Security > Files and Folders" if not accessible else None)
+
     # Browser Automation Tools
     if not json_mode:
         console.print("\n[bold]Browser Automation[/bold]")
