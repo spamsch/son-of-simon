@@ -147,7 +147,8 @@ class SearchEmailsTask(Task):
             "Search emails in Mail.app. Can search by sender, subject, message_id, or list all emails in an account. "
             "IMPORTANT: 'emails from X account' means emails RECEIVED BY that account (use account parameter), "
             "not emails FROM that sender. Use message_id for precise lookup of a specific email. "
-            "Use with_content=True to include the full email body text (needed to read what an email says)."
+            "Use with_content=True to include the full email body text (needed to read what an email says). "
+            "Add with_links=True to also extract hyperlinks from HTML emails (slower, only when URLs are needed)."
         )
 
     async def execute(
@@ -161,6 +162,7 @@ class SearchEmailsTask(Task):
         days: int | None = None,
         all_mailboxes: bool = False,
         with_content: bool = False,
+        with_links: bool = False,
         limit: int = 20
     ) -> dict[str, Any]:
         """Search emails.
@@ -175,6 +177,7 @@ class SearchEmailsTask(Task):
             days: Only return emails from the last N days.
             all_mailboxes: Search all mailboxes including Sent, Trash, etc.
             with_content: Include the full email body text (use when you need to read the email content).
+            with_links: Also extract hyperlinks from HTML email source (slower, use only when URLs are needed). Requires with_content.
             limit: Maximum number of results to return.
 
         Returns:
@@ -202,6 +205,8 @@ class SearchEmailsTask(Task):
             args.append("--all-mailboxes")
         if with_content:
             args.append("--with-content")
+        if with_links:
+            args.append("--with-links")
         args.extend(["--limit", str(limit)])
 
         return await run_script("mail/search-emails.sh", args, timeout=60)
