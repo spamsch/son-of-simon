@@ -150,7 +150,7 @@ class PaperlessGetDocumentTask(Task):
                     "document": {
                         "id": doc.get("id"),
                         "title": doc.get("title"),
-                        "content": doc.get("content", "")[:2000],  # Limit content preview
+                        "content": doc.get("content", ""),
                         "correspondent": doc.get("correspondent"),
                         "correspondent_name": doc.get("correspondent__name"),
                         "tags": doc.get("tags", []),
