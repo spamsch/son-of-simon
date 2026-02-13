@@ -1,0 +1,7 @@
+- **New Contacts automation** — Create, retrieve, and search contacts plus list contact groups via AppleScript
+- **New Messages automation** — Send messages, list chats, and search messages across conversations
+- **New System Controls automation** — Control volume, Bluetooth, WiFi, Do Not Disturb, dark mode, and view system status
+- **Account-based calendar disambiguation** — All calendar tools now distinguish between calendars with the same name across different accounts
+- **Folder access permission check** — Added permission verification for Documents, Downloads, and Desktop folders in onboarding
+- **Context window overflow protection** — Automatically trim conversation history to prevent exceeding LLM context limits
+- **Auto-generated release notes** — Release process now generates release notes via Claude
