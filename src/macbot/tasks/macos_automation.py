@@ -838,6 +838,38 @@ class SearchNotesTask(Task):
         return await run_script("notes/search-notes.sh", args)
 
 
+class ReadNoteTask(Task):
+    """Read a note's full content."""
+
+    @property
+    def name(self) -> str:
+        return "read_note"
+
+    @property
+    def description(self) -> str:
+        return "Read the full content of a note from Notes.app by title."
+
+    async def execute(
+        self,
+        title: str,
+        folder: str | None = None
+    ) -> dict[str, Any]:
+        """Read a note's content.
+
+        Args:
+            title: Note title (or partial match).
+            folder: Optional folder to search in.
+
+        Returns:
+            Dictionary with note title, folder, and full plaintext content.
+        """
+        args = ["--title", title]
+        if folder:
+            args.extend(["--folder", folder])
+
+        return await run_script("notes/read-note.sh", args)
+
+
 class ListNotesTask(Task):
     """List notes with various options."""
 
@@ -1599,6 +1631,7 @@ def register_macos_tasks(registry) -> None:
     # Notes tasks
     registry.register(CreateNoteTask())
     registry.register(SearchNotesTask())
+    registry.register(ReadNoteTask())
     registry.register(ListNotesTask())
     registry.register(ListNoteFoldersTask())
     registry.register(CreateNoteFolderTask())
