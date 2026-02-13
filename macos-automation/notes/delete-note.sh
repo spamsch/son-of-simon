@@ -28,37 +28,57 @@ FOLDER_ESCAPED=$(escape_for_applescript "$FOLDER")
 
 osascript <<EOF
 tell application "Notes"
-    set foundNote to missing value
+    -- Find note using bulk property fetch
+    -- (avoids "repeat with n in notes of folder" which triggers -1728 on iCloud folders)
+    set foundNoteId to missing value
+    set foundNoteName to ""
+
     if "$FOLDER_ESCAPED" is not "" then
         try
             set srcFolder to folder "$FOLDER_ESCAPED"
-            repeat with n in notes of srcFolder
-                if name of n contains "$TITLE_ESCAPED" then
-                    set foundNote to n
-                    exit repeat
-                end if
-            end repeat
+            set nCount to count of notes of srcFolder
+            if nCount > 0 then
+                set noteIds to id of notes of srcFolder
+                set noteNames to name of notes of srcFolder
+                repeat with i from 1 to nCount
+                    if item i of noteNames contains "$TITLE_ESCAPED" then
+                        set foundNoteId to item i of noteIds
+                        set foundNoteName to item i of noteNames
+                        exit repeat
+                    end if
+                end repeat
+            end if
         on error
             return "Error: Folder '$FOLDER_ESCAPED' not found."
         end try
     else
         repeat with f in folders
-            repeat with n in notes of f
-                if name of n contains "$TITLE_ESCAPED" then
-                    set foundNote to n
-                    exit repeat
+            if name of f is not "Recently Deleted" then
+                set nCount to count of notes of f
+                if nCount > 0 then
+                    try
+                        set noteIds to id of notes of f
+                        set noteNames to name of notes of f
+                        repeat with i from 1 to nCount
+                            if item i of noteNames contains "$TITLE_ESCAPED" then
+                                set foundNoteId to item i of noteIds
+                                set foundNoteName to item i of noteNames
+                                exit repeat
+                            end if
+                        end repeat
+                    end try
                 end if
-            end repeat
-            if foundNote is not missing value then exit repeat
+            end if
+            if foundNoteId is not missing value then exit repeat
         end repeat
     end if
 
-    if foundNote is missing value then
+    if foundNoteId is missing value then
         return "Error: Note matching '$TITLE_ESCAPED' not found."
     end if
 
-    set noteName to name of foundNote
+    set foundNote to note id foundNoteId
     delete foundNote
-    return "Deleted note '" & noteName & "'"
+    return "Deleted note '" & foundNoteName & "'"
 end tell
 EOF

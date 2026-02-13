@@ -21,7 +21,28 @@ tell application "Notes"
         if name of f is not "Recently Deleted" then
             set folderCount to folderCount + 1
             set nCount to count of notes of f
-            set output to output & "📁 " & name of f & " (" & nCount & " notes)" & return
+
+            -- Detect smart folders: first note's container won't match the folder
+            set isSmart to false
+            if nCount > 0 then
+                try
+                    set fId to id of f
+                    set firstNote to first note of f
+                    set nId to id of firstNote
+                    set globalNote to note id nId
+                    set c to container of globalNote
+                    set cId to id of c
+                    if cId is not fId then
+                        set isSmart to true
+                    end if
+                end try
+            end if
+
+            if isSmart then
+                set output to output & "🔍 " & name of f & " (" & nCount & " notes, smart folder)" & return
+            else
+                set output to output & "📁 " & name of f & " (" & nCount & " notes)" & return
+            end if
         end if
     end repeat
 

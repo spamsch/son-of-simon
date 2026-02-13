@@ -75,13 +75,14 @@ if [[ -n "$NAME" ]]; then
     # Export single note
     CONTENT=$(osascript <<EOF
 tell application "Notes"
-    set matchingNotes to (notes whose name is "$NAME")
+    -- Bulk ID fetch avoids -1728 on "item 1 of notes whose ..."
+    set matchIds to id of (notes whose name is "$NAME")
 
-    if (count of matchingNotes) is 0 then
+    if (count of matchIds) is 0 then
         return "ERROR:Note '$NAME' not found."
     end if
 
-    set n to item 1 of matchingNotes
+    set n to note id (item 1 of matchIds)
 
     if "$FORMAT" is "html" then
         return body of n
@@ -114,9 +115,11 @@ tell application "Notes"
         return "ERROR:Folder '$FOLDER' not found."
     end try
 
+    -- Bulk name fetch avoids -1728 on "repeat with n in notes of folder"
+    set noteNames to name of notes of targetFolder
     set output to ""
-    repeat with n in notes of targetFolder
-        set output to output & name of n & "|||"
+    repeat with noteName in noteNames
+        set output to output & noteName & "|||"
     end repeat
     return output
 end tell

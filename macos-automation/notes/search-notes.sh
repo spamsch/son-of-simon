@@ -93,41 +93,58 @@ tell application "Notes"
     repeat with f in folderList
         -- Skip Recently Deleted
         if name of f is not "Recently Deleted" then
-            repeat with n in notes of f
-                set matched to false
+            -- Bulk property fetch (avoids "repeat with n in notes of f" which triggers -1728)
+            set nCount to count of notes of f
+            if nCount > 0 then
+                try
+                    set noteNames to name of notes of f
+                    set noteIds to id of notes of f
+                    set noteModDates to modification date of notes of f
+                    set folderName to name of f
 
-                if $TITLE_ONLY then
-                    if name of n contains "$QUERY_ESCAPED" then
-                        set matched to true
-                    end if
-                else
-                    if name of n contains "$QUERY_ESCAPED" or plaintext of n contains "$QUERY_ESCAPED" then
-                        set matched to true
-                    end if
-                end if
+                    repeat with i from 1 to nCount
+                        set matched to false
 
-                if matched and matchCount < $LIMIT then
-                    set matchCount to matchCount + 1
-
-                    set output to output & "📝 " & name of n & return
-                    set output to output & "   Folder: " & name of f & return
-                    set output to output & "   Modified: " & (modification date of n as string) & return
-
-                    if $SHOW_PREVIEW then
-                        set noteText to plaintext of n
-                        if length of noteText > 200 then
-                            set preview to text 1 thru 200 of noteText
-                            set preview to preview & "..."
+                        if $TITLE_ONLY then
+                            if item i of noteNames contains "$QUERY_ESCAPED" then
+                                set matched to true
+                            end if
                         else
-                            set preview to noteText
+                            if item i of noteNames contains "$QUERY_ESCAPED" then
+                                set matched to true
+                            else
+                                -- Content search requires per-note access via note id
+                                set thisNote to note id (item i of noteIds)
+                                if plaintext of thisNote contains "$QUERY_ESCAPED" then
+                                    set matched to true
+                                end if
+                            end if
                         end if
-                        -- Remove line breaks for cleaner display
-                        set output to output & "   Preview: " & preview & return
-                    end if
 
-                    set output to output & return
-                end if
-            end repeat
+                        if matched and matchCount < $LIMIT then
+                            set matchCount to matchCount + 1
+
+                            set output to output & "📝 " & item i of noteNames & return
+                            set output to output & "   Folder: " & folderName & return
+                            set output to output & "   Modified: " & (item i of noteModDates as string) & return
+
+                            if $SHOW_PREVIEW then
+                                set thisNote to note id (item i of noteIds)
+                                set noteText to plaintext of thisNote
+                                if length of noteText > 200 then
+                                    set preview to text 1 thru 200 of noteText
+                                    set preview to preview & "..."
+                                else
+                                    set preview to noteText
+                                end if
+                                set output to output & "   Preview: " & preview & return
+                            end if
+
+                            set output to output & return
+                        end if
+                    end repeat
+                end try
+            end if
         end if
     end repeat
 

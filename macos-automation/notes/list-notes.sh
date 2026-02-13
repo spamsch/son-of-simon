@@ -106,43 +106,57 @@ tell application "Notes"
                 set folderOutput to "📁 " & name of f & return
             end if
 
-            repeat with n in notes of f
-                set include to true
+            -- Bulk property fetch (avoids "repeat with n in notes of f" which triggers -1728)
+            set nCount to count of notes of f
+            if nCount > 0 then
+                try
+                    set noteNames to name of notes of f
+                    set noteModDates to modification date of notes of f
+                    set noteIds to id of notes of f
 
-                -- Apply date filter
-                if cutoffDate is not missing value then
-                    if modification date of n < cutoffDate then
-                        set include to false
-                    end if
-                end if
+                    repeat with i from 1 to nCount
+                        set include to true
 
-                -- Apply attachment filter
-                if $WITH_ATTACHMENTS then
-                    if (count of attachments of n) is 0 then
-                        set include to false
-                    end if
-                end if
+                        -- Apply date filter
+                        if cutoffDate is not missing value then
+                            if item i of noteModDates < cutoffDate then
+                                set include to false
+                            end if
+                        end if
 
-                if include and noteCount < $LIMIT then
-                    set noteCount to noteCount + 1
-                    set folderNoteCount to folderNoteCount + 1
+                        if include and noteCount < $LIMIT then
+                            -- Get note by ID for per-note properties (attachments)
+                            set thisNote to note id (item i of noteIds)
+                            set attCount to count of attachments of thisNote
 
-                    set noteLine to "  📝 " & name of n
+                            -- Apply attachment filter
+                            if $WITH_ATTACHMENTS then
+                                if attCount is 0 then
+                                    set include to false
+                                end if
+                            end if
+                        end if
 
-                    -- Add attachment indicator
-                    set attCount to count of attachments of n
-                    if attCount > 0 then
-                        set noteLine to noteLine & " 📎" & attCount
-                    end if
+                        if include and noteCount < $LIMIT then
+                            set noteCount to noteCount + 1
+                            set folderNoteCount to folderNoteCount + 1
 
-                    set folderOutput to folderOutput & noteLine & return
+                            set noteLine to "  📝 " & item i of noteNames
 
-                    -- Show modification date for recent filter
-                    if $RECENT_DAYS > 0 then
-                        set folderOutput to folderOutput & "     Modified: " & (modification date of n as string) & return
-                    end if
-                end if
-            end repeat
+                            if attCount > 0 then
+                                set noteLine to noteLine & " 📎" & attCount
+                            end if
+
+                            set folderOutput to folderOutput & noteLine & return
+
+                            -- Show modification date for recent filter
+                            if $RECENT_DAYS > 0 then
+                                set folderOutput to folderOutput & "     Modified: " & (item i of noteModDates as string) & return
+                            end if
+                        end if
+                    end repeat
+                end try
+            end if
 
             if folderNoteCount > 0 then
                 set output to output & folderOutput & return
