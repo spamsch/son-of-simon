@@ -452,16 +452,25 @@ class GetTodayEventsTask(Task):
     def description(self) -> str:
         return "Get all calendar events scheduled for today from Calendar.app."
 
-    async def execute(self, calendar: str | None = None) -> dict[str, Any]:
+    async def execute(
+        self,
+        calendar: str | None = None,
+        account: str | None = None,
+    ) -> dict[str, Any]:
         """Get today's events.
 
         Args:
             calendar: Only show events from this calendar (optional).
+            account: Only show events from calendars in this account (optional).
 
         Returns:
             Dictionary with today's events.
         """
-        args = ["--calendar", calendar] if calendar else []
+        args: list[str] = []
+        if calendar:
+            args.extend(["--calendar", calendar])
+        if account:
+            args.extend(["--account", account])
         return await run_script("calendar/get-today-events.sh", args)
 
 
@@ -479,13 +488,15 @@ class GetWeekEventsTask(Task):
     async def execute(
         self,
         days: int = 7,
-        calendar: str | None = None
+        calendar: str | None = None,
+        account: str | None = None,
     ) -> dict[str, Any]:
         """Get upcoming events.
 
         Args:
             days: Number of days to look ahead (default: 7).
             calendar: Only show events from this calendar (optional).
+            account: Only show events from calendars in this account (optional).
 
         Returns:
             Dictionary with upcoming events.
@@ -493,6 +504,8 @@ class GetWeekEventsTask(Task):
         args = ["--days", str(days)]
         if calendar:
             args.extend(["--calendar", calendar])
+        if account:
+            args.extend(["--account", account])
         return await run_script("calendar/get-week-events.sh", args)
 
 
@@ -517,7 +530,8 @@ class CreateCalendarEventTask(Task):
         date: str | None = None,
         all_day: bool = False,
         location: str | None = None,
-        notes: str | None = None
+        notes: str | None = None,
+        account: str | None = None,
     ) -> dict[str, Any]:
         """Create a calendar event.
 
@@ -531,11 +545,15 @@ class CreateCalendarEventTask(Task):
             all_day: Create an all-day event.
             location: Event location (optional).
             notes: Event description/notes (optional).
+            account: Account name to disambiguate calendars with the same name (optional).
 
         Returns:
             Dictionary with creation result.
         """
         args = ["--calendar", calendar, "--title", title]
+
+        if account:
+            args.extend(["--account", account])
 
         if all_day:
             if not date:
@@ -559,7 +577,7 @@ class CreateCalendarEventTask(Task):
 
 
 class ListCalendarsTask(Task):
-    """List all available calendars."""
+    """List all available calendars grouped by account."""
 
     @property
     def name(self) -> str:
@@ -567,18 +585,27 @@ class ListCalendarsTask(Task):
 
     @property
     def description(self) -> str:
-        return "List all calendars available in Calendar.app."
+        return "List all calendars available in Calendar.app, grouped by account."
 
-    async def execute(self, with_counts: bool = False) -> dict[str, Any]:
+    async def execute(
+        self,
+        with_counts: bool = False,
+        account: str | None = None,
+    ) -> dict[str, Any]:
         """List calendars.
 
         Args:
             with_counts: Include event counts for each calendar.
+            account: Only show calendars from this account (optional).
 
         Returns:
-            Dictionary with calendar list.
+            Dictionary with calendar list grouped by account.
         """
-        args = ["--with-counts"] if with_counts else []
+        args: list[str] = []
+        if with_counts:
+            args.append("--with-counts")
+        if account:
+            args.extend(["--account", account])
         return await run_script("calendar/list-calendars.sh", args)
 
 

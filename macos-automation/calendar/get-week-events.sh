@@ -10,14 +10,17 @@
 #   ./get-week-events.sh
 #   ./get-week-events.sh --days 14
 #   ./get-week-events.sh --calendar "Work"
+#   ./get-week-events.sh --account "Google" --calendar "Calendar"
 #
 # Options:
 #   --days <n>          Number of days to look ahead (default: 7)
 #   --calendar <name>   Only show events from the specified calendar
+#   --account <name>    Only show events from calendars in matching account
 #
 # Example:
 #   ./get-week-events.sh
 #   ./get-week-events.sh --days 30 --calendar "Personal"
+#   ./get-week-events.sh --account "iCloud"
 # ==============================================================================
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -26,6 +29,7 @@ source "$SCRIPT_DIR/../lib/common.sh"
 # Default values
 DAYS=7
 CALENDAR_NAME=""
+ACCOUNT_NAME=""
 
 # Parse arguments
 while [[ $# -gt 0 ]]; do
@@ -38,8 +42,12 @@ while [[ $# -gt 0 ]]; do
             CALENDAR_NAME="$2"
             shift 2
             ;;
+        --account)
+            ACCOUNT_NAME="$2"
+            shift 2
+            ;;
         -h|--help)
-            head -26 "$0" | tail -21
+            head -28 "$0" | tail -23
             exit 0
             ;;
         *)
@@ -55,6 +63,7 @@ import Foundation
 
 let daysAhead = '"$DAYS"'
 let calendarFilter = "'"$CALENDAR_NAME"'"
+let accountFilter = "'"$ACCOUNT_NAME"'"
 let store = EKEventStore()
 let semaphore = DispatchSemaphore(value: 0)
 
@@ -71,13 +80,25 @@ store.requestFullAccessToEvents { granted, error in
     let startDate = calendar.startOfDay(for: now)
     let endDate = calendar.date(byAdding: .day, value: daysAhead, to: startDate)!
 
-    // Filter calendars if specified
+    // Filter calendars by name and/or account
     var calendars: [EKCalendar]? = nil
-    if !calendarFilter.isEmpty {
+    if !calendarFilter.isEmpty || !accountFilter.isEmpty {
         let allCalendars = store.calendars(for: .event)
-        let matchingCalendars = allCalendars.filter { $0.title == calendarFilter }
+        var matchingCalendars = allCalendars
+        if !calendarFilter.isEmpty {
+            matchingCalendars = matchingCalendars.filter { $0.title == calendarFilter }
+        }
+        if !accountFilter.isEmpty {
+            matchingCalendars = matchingCalendars.filter {
+                $0.source.title.localizedCaseInsensitiveContains(accountFilter)
+            }
+        }
         if matchingCalendars.isEmpty {
-            print("Error: Calendar \"\(calendarFilter)\" not found.")
+            let filterDesc = [
+                calendarFilter.isEmpty ? nil : "calendar \"\(calendarFilter)\"",
+                accountFilter.isEmpty ? nil : "account \"\(accountFilter)\""
+            ].compactMap { $0 }.joined(separator: " in ")
+            print("Error: No calendars found matching \(filterDesc).")
             return
         }
         calendars = matchingCalendars
@@ -93,7 +114,7 @@ store.requestFullAccessToEvents { granted, error in
 
     print("=== NEXT \(daysAhead) DAYS ===\n")
 
-    // Group events by day, then by calendar
+    // Group events by day, then by calendar (include account for disambiguation)
     let dayFormatter = DateFormatter()
     dayFormatter.dateFormat = "EEEE, MMMM d"
 
@@ -117,18 +138,21 @@ store.requestFullAccessToEvents { granted, error in
 
         guard let dayEvents = eventsByDay[dayKey] else { continue }
 
-        // Group by calendar within each day
+        // Group by calendar (with account) within each day
         var eventsByCalendar: [String: [EKEvent]] = [:]
+        var calOrder: [String] = []
         for event in dayEvents {
-            let calName = event.calendar.title
-            if eventsByCalendar[calName] == nil {
-                eventsByCalendar[calName] = []
+            let calKey = "\(event.calendar.title) (\(event.calendar.source.title))"
+            if eventsByCalendar[calKey] == nil {
+                eventsByCalendar[calKey] = []
+                calOrder.append(calKey)
             }
-            eventsByCalendar[calName]!.append(event)
+            eventsByCalendar[calKey]!.append(event)
         }
 
-        for (calName, calEvents) in eventsByCalendar.sorted(by: { $0.key < $1.key }) {
-            print("  \u{1F4C5} \(calName)")
+        for calKey in calOrder {
+            guard let calEvents = eventsByCalendar[calKey] else { continue }
+            print("  \u{1F4C5} \(calKey)")
             for event in calEvents {
                 let timeStr: String
                 if event.isAllDay {
