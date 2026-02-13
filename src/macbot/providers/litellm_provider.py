@@ -5,6 +5,7 @@ format: provider/model (e.g., anthropic/claude-sonnet-4-20250514, openai/gpt-4o)
 """
 
 import json
+import logging
 import os
 import re
 from typing import Any
@@ -18,6 +19,8 @@ from macbot.providers.base import (
     StreamCallback,
     ToolCall,
 )
+
+logger = logging.getLogger(__name__)
 
 
 class LiteLLMProvider(LLMProvider):
@@ -48,6 +51,8 @@ class LiteLLMProvider(LLMProvider):
 
         super().__init__(api_key or "", model)
         self.api_base = api_base
+        self._context_window: int | None = None
+        self._context_window_looked_up: bool = False
 
         # Suppress LiteLLM's verbose logging
         litellm.suppress_debug_info = True
@@ -67,6 +72,86 @@ class LiteLLMProvider(LLMProvider):
             }
             if provider in key_map:
                 os.environ[key_map[provider]] = api_key
+
+    def get_context_window(self) -> int | None:
+        """Return the model's context window using litellm model info.
+
+        Caches the result (including None) so the lookup happens at most once.
+        """
+        if self._context_window_looked_up:
+            return self._context_window
+        self._context_window_looked_up = True
+        try:
+            info = litellm.get_model_info(self.model)
+            self._context_window = info.get("max_input_tokens")
+        except Exception:
+            logger.debug("Could not look up context window for %s", self.model)
+            self._context_window = None
+        return self._context_window
+
+    def estimate_tokens(
+        self,
+        messages: list[Message],
+        system_prompt: str | None = None,
+        tools: list[dict[str, Any]] | None = None,
+    ) -> int:
+        """Estimate token count using litellm.token_counter.
+
+        Falls back to the base class character heuristic on failure.
+        """
+        try:
+            litellm_messages: list[dict[str, Any]] = []
+            if system_prompt:
+                litellm_messages.append({"role": "system", "content": system_prompt})
+            for msg in messages:
+                if msg.role == "assistant" and msg.tool_calls:
+                    litellm_messages.append({
+                        "role": "assistant",
+                        "content": msg.content,
+                        "tool_calls": [
+                            {
+                                "id": tc.id,
+                                "type": "function",
+                                "function": {
+                                    "name": tc.name,
+                                    "arguments": json.dumps(tc.arguments),
+                                },
+                            }
+                            for tc in msg.tool_calls
+                        ],
+                    })
+                elif msg.role == "tool":
+                    litellm_messages.append({
+                        "role": "tool",
+                        "tool_call_id": msg.tool_call_id,
+                        "content": msg.content or "",
+                    })
+                else:
+                    litellm_messages.append({
+                        "role": msg.role,
+                        "content": msg.content,
+                    })
+
+            kwargs: dict[str, Any] = {
+                "model": self.model,
+                "messages": litellm_messages,
+            }
+            if tools:
+                kwargs["tools"] = [
+                    {
+                        "type": "function",
+                        "function": {
+                            "name": t["name"],
+                            "description": t.get("description", ""),
+                            "parameters": t.get("input_schema", {}),
+                        },
+                    }
+                    for t in tools
+                ]
+            return litellm.token_counter(**kwargs)
+        except Exception:
+            logger.debug("litellm.token_counter failed, using char heuristic")
+            return super().estimate_tokens(messages, system_prompt, tools)
 
     async def chat(
         self,

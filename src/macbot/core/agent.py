@@ -415,11 +415,91 @@ On subsequent requests for the same site, **check memory first** (`memory_list`)
         capped = [first_msg] + tail[start:]
         return capped
 
+    def _trim_messages_to_fit(
+        self,
+        messages: list[Message],
+        system_prompt: str | None = None,
+        tools: list[dict[str, Any]] | None = None,
+    ) -> list[Message]:
+        """Drop oldest messages when approaching the context window limit.
+
+        Always preserves the first message (the user's goal) and at least
+        the most recent message group. Tool-call assistant messages and
+        their corresponding tool-result messages are treated as an
+        indivisible group to avoid orphaned tool results.
+        """
+        context_window = self.provider.get_context_window()
+        if context_window is None:
+            return messages
+
+        budget = int(context_window * 0.9)
+        estimated = self.provider.estimate_tokens(messages, system_prompt, tools)
+        if estimated <= budget:
+            return messages
+
+        if len(messages) <= 1:
+            return messages
+
+        # Group messages into indivisible units.
+        # A tool-call assistant message + its following tool results = one group.
+        groups: list[list[Message]] = []
+        i = 0
+        while i < len(messages):
+            msg = messages[i]
+            if msg.role == "assistant" and msg.tool_calls:
+                group = [msg]
+                i += 1
+                while i < len(messages) and messages[i].role == "tool":
+                    group.append(messages[i])
+                    i += 1
+                groups.append(group)
+            else:
+                groups.append([msg])
+                i += 1
+
+        # Need at least the first group (goal) and the last group
+        if len(groups) <= 2:
+            return messages
+
+        # Drop groups from index 1 onwards (preserve first = goal)
+        # until we're under budget, but always keep the last group.
+        drop_from = 1
+        while drop_from < len(groups) - 1:
+            kept = [groups[0]] + groups[drop_from:]
+            flat = [m for g in kept for m in g]
+            est = self.provider.estimate_tokens(flat, system_prompt, tools)
+            if est <= budget:
+                dropped_count = drop_from - 1
+                if dropped_count > 0:
+                    logger.warning(
+                        "Trimmed %d message group(s) to fit context window "
+                        "(%d tokens estimated, budget %d)",
+                        dropped_count,
+                        est,
+                        budget,
+                    )
+                return flat
+            drop_from += 1
+
+        # Worst case: keep only first + last group
+        kept = [groups[0]] + [groups[-1]]
+        flat = [m for g in kept for m in g]
+        dropped_count = len(groups) - 2
+        logger.warning(
+            "Trimmed %d message group(s) to fit context window "
+            "(%d tokens estimated, budget %d)",
+            dropped_count,
+            self.provider.estimate_tokens(flat, system_prompt, tools),
+            budget,
+        )
+        return flat
+
     async def _get_llm_response(self, stream: bool = False, verbose: bool = False) -> LLMResponse:
         """Get a response from the LLM."""
         tools = self._get_tool_schemas()
         system_prompt = self._build_system_prompt()
         messages = self._cap_messages(self.messages)
+        messages = self._trim_messages_to_fit(messages, system_prompt, tools)
 
         stream_callback = None
         if stream:
