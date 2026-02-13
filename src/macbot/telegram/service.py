@@ -181,6 +181,46 @@ class TelegramService:
         )
         return response.content or text[:200]
 
+    async def _trim_for_telegram(self, text: str) -> str:
+        """Condense a long response for comfortable reading on mobile.
+
+        Short responses (≤500 chars) are returned as-is.  Longer ones are
+        summarized via the LLM into a concise Telegram-friendly message.
+
+        Args:
+            text: Full agent response text
+
+        Returns:
+            Trimmed response suitable for a Telegram chat window
+        """
+        if len(text) <= 500:
+            return text
+
+        try:
+            from macbot.config import settings
+            from macbot.providers.base import Message
+            from macbot.providers.litellm_provider import LiteLLMProvider
+
+            model = settings.get_model()
+            api_key = settings.get_api_key_for_model(model)
+            api_base = settings.get_api_base_for_model(model)
+            provider = LiteLLMProvider(model=model, api_key=api_key, api_base=api_base)
+
+            response = await provider.chat(
+                messages=[Message(role="user", content=text)],
+                system_prompt=(
+                    "Condense this assistant response for a Telegram chat. "
+                    "Keep the key information and outcome but make it short and "
+                    "scannable — ideally 2-4 sentences, max ~400 characters. "
+                    "Use a casual, direct tone. Preserve any important names, "
+                    "dates, numbers, or action items. Do not add commentary."
+                ),
+            )
+            return response.content or text[:500]
+        except Exception as e:
+            logger.warning(f"Text trimming failed (non-fatal): {e}")
+            return text
+
     async def _text_to_voice(self, text: str) -> bytes:
         """Convert text to OGG Opus audio using OpenAI TTS.
 
@@ -276,12 +316,14 @@ class TelegramService:
 
                 response = await self._handler(text, chat_id)
                 if response:
+                    # Trim long responses for mobile readability
+                    trimmed = await self._trim_for_telegram(response)
                     # Try markdown first, fall back to plain text
                     try:
-                        await self.send_message(response, chat_id, parse_mode="Markdown")
+                        await self.send_message(trimmed, chat_id, parse_mode="Markdown")
                     except TelegramError:
                         # Markdown parsing failed, send as plain text
-                        await self.send_message(response, chat_id, parse_mode=None)
+                        await self.send_message(trimmed, chat_id, parse_mode=None)
             except Exception as e:
                 logger.exception(f"Error processing message: {e}")
                 await self.send_message(
