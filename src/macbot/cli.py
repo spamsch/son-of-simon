@@ -1681,6 +1681,18 @@ def cmd_doctor(args: argparse.Namespace) -> None:
     check("Safari.app", ok, msg,
           "Grant access in System Settings > Privacy & Security > Automation" if not ok else None)
 
+    # Test Contacts
+    ok, msg = test_app_access("Contacts", 'tell application "Contacts" to count of people')
+    results["permissions"]["automation"]["Contacts"] = ok
+    check("Contacts.app", ok, msg,
+          "Grant access in System Settings > Privacy & Security > Automation" if not ok else None)
+
+    # Test Messages
+    ok, msg = test_app_access("Messages", 'tell application "Messages" to count of services')
+    results["permissions"]["automation"]["Messages"] = ok
+    check("Messages.app", ok, msg,
+          "Grant access in System Settings > Privacy & Security > Automation" if not ok else None)
+
     # Folder Access
     if not json_mode:
         console.print("\n[bold]Folder Access[/bold]")
@@ -1706,6 +1718,16 @@ def cmd_doctor(args: argparse.Namespace) -> None:
         results["permissions"]["folder_access"][folder_name] = accessible
         check(f"~/{folder_name}", accessible, msg,
               "Grant access in System Settings > Privacy & Security > Files and Folders" if not accessible else None)
+
+    # Test Full Disk Access (needed for Messages chat.db)
+    chat_db = os.path.expanduser("~/Library/Messages/chat.db")
+    if os.path.exists(chat_db) and os.access(chat_db, os.R_OK):
+        results["permissions"]["full_disk_access"] = True
+        check("Full Disk Access", True, "chat.db readable")
+    else:
+        results["permissions"]["full_disk_access"] = False
+        check("Full Disk Access", False, "Cannot read ~/Library/Messages/chat.db",
+              "Grant Full Disk Access in System Settings > Privacy & Security > Full Disk Access")
 
     # Browser Automation Tools
     if not json_mode:

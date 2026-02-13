@@ -1632,6 +1632,544 @@ class GoogleSearchTask(Task):
 
 
 # =============================================================================
+# CONTACTS TASKS
+# =============================================================================
+
+class SearchContactsTask(Task):
+    """Search contacts by name, email, phone, or organization."""
+
+    @property
+    def name(self) -> str:
+        return "search_contacts"
+
+    @property
+    def description(self) -> str:
+        return (
+            "Search contacts in Contacts.app by name, email, phone, or organization. "
+            "Name and organization searches are fast (use `whose` clause). "
+            "Email and phone searches are slower (bulk fetch then filter). "
+            "At least one search criterion is required."
+        )
+
+    async def execute(
+        self,
+        name: str | None = None,
+        email: str | None = None,
+        phone: str | None = None,
+        organization: str | None = None,
+        limit: int = 20,
+    ) -> dict[str, Any]:
+        """Search contacts.
+
+        Args:
+            name: Search by contact name (partial match).
+            email: Search by email address (partial match).
+            phone: Search by phone number (partial match).
+            organization: Search by organization/company name (partial match).
+            limit: Maximum number of results (default: 20).
+
+        Returns:
+            Dictionary with matching contacts.
+        """
+        if not name and not email and not phone and not organization:
+            return {"success": False, "error": "Must specify at least one of: name, email, phone, organization"}
+
+        args = []
+        if name:
+            args.extend(["--name", name])
+        if email:
+            args.extend(["--email", email])
+        if phone:
+            args.extend(["--phone", phone])
+        if organization:
+            args.extend(["--organization", organization])
+        args.extend(["--limit", str(limit)])
+
+        return await run_script("contacts/search-contacts.sh", args, timeout=30)
+
+
+class GetContactTask(Task):
+    """Get full details of a specific contact."""
+
+    @property
+    def name(self) -> str:
+        return "get_contact"
+
+    @property
+    def description(self) -> str:
+        return (
+            "Get the full contact card from Contacts.app including all emails, phones, "
+            "addresses, organization, job title, birthday, notes, and groups. "
+            "Search by name (partial match) or use --exact for exact match."
+        )
+
+    async def execute(
+        self,
+        name: str | None = None,
+        id: str | None = None,
+        exact: bool = False,
+    ) -> dict[str, Any]:
+        """Get contact details.
+
+        Args:
+            name: Contact name to look up.
+            id: Contact ID for direct lookup.
+            exact: If True, match name exactly instead of partial match.
+
+        Returns:
+            Dictionary with full contact details.
+        """
+        if not name and not id:
+            return {"success": False, "error": "Must specify name or id"}
+
+        args = []
+        if name:
+            args.extend(["--name", name])
+        if id:
+            args.extend(["--id", id])
+        if exact:
+            args.append("--exact")
+
+        return await run_script("contacts/get-contact.sh", args, timeout=15)
+
+
+class CreateContactTask(Task):
+    """Create a new contact in Contacts.app."""
+
+    @property
+    def name(self) -> str:
+        return "create_contact"
+
+    @property
+    def description(self) -> str:
+        return (
+            "Create a new contact in Contacts.app. First name is required. "
+            "Can set email, phone, organization, job title, and assign to a group."
+        )
+
+    async def execute(
+        self,
+        first_name: str,
+        last_name: str | None = None,
+        email: str | None = None,
+        phone: str | None = None,
+        organization: str | None = None,
+        group: str | None = None,
+        job_title: str | None = None,
+    ) -> dict[str, Any]:
+        """Create a contact.
+
+        Args:
+            first_name: First name (required).
+            last_name: Last name.
+            email: Email address.
+            phone: Phone number.
+            organization: Company/organization name.
+            group: Contact group to add to (must exist).
+            job_title: Job title.
+
+        Returns:
+            Dictionary with created contact info.
+        """
+        args = ["--first-name", first_name]
+        if last_name:
+            args.extend(["--last-name", last_name])
+        if email:
+            args.extend(["--email", email])
+        if phone:
+            args.extend(["--phone", phone])
+        if organization:
+            args.extend(["--organization", organization])
+        if group:
+            args.extend(["--group", group])
+        if job_title:
+            args.extend(["--job-title", job_title])
+
+        return await run_script("contacts/create-contact.sh", args, timeout=15)
+
+
+class ListContactGroupsTask(Task):
+    """List contact groups from Contacts.app."""
+
+    @property
+    def name(self) -> str:
+        return "list_contact_groups"
+
+    @property
+    def description(self) -> str:
+        return "List all contact groups in Contacts.app with member counts."
+
+    async def execute(
+        self,
+        with_members: bool = False,
+        limit: int = 50,
+    ) -> dict[str, Any]:
+        """List contact groups.
+
+        Args:
+            with_members: If True, include member names for each group.
+            limit: Maximum number of groups to return (default: 50).
+
+        Returns:
+            Dictionary with contact groups.
+        """
+        args = []
+        if with_members:
+            args.append("--with-members")
+        args.extend(["--limit", str(limit)])
+
+        return await run_script("contacts/list-groups.sh", args, timeout=15)
+
+
+# =============================================================================
+# MESSAGES TASKS
+# =============================================================================
+
+class SendMessageTask(Task):
+    """Send an iMessage via Messages.app."""
+
+    @property
+    def name(self) -> str:
+        return "send_imessage"
+
+    @property
+    def description(self) -> str:
+        return (
+            "Send an iMessage using Messages.app. "
+            "Requires a recipient (phone number with country code or Apple ID email) and message body. "
+            "Always confirm the message content with the user before sending."
+        )
+
+    async def execute(
+        self,
+        to: str,
+        body: str,
+    ) -> dict[str, Any]:
+        """Send an iMessage.
+
+        Args:
+            to: Recipient phone number (with country code, e.g. +15551234567) or Apple ID email.
+            body: Message text to send.
+
+        Returns:
+            Dictionary with send confirmation.
+        """
+        args = ["--to", to, "--body", body]
+        return await run_script("messages/send-message.sh", args, timeout=15)
+
+
+class ListChatsTask(Task):
+    """List recent iMessage chats."""
+
+    @property
+    def name(self) -> str:
+        return "list_imessage_chats"
+
+    @property
+    def description(self) -> str:
+        return (
+            "List recent iMessage/SMS chats from Messages.app history. "
+            "Reads from chat.db (requires Full Disk Access). "
+            "Shows chat name, last message date, and preview."
+        )
+
+    async def execute(
+        self,
+        limit: int = 20,
+        days: int = 7,
+    ) -> dict[str, Any]:
+        """List recent chats.
+
+        Args:
+            limit: Maximum number of chats to return (default: 20).
+            days: Only show chats with messages in the last N days (default: 7).
+
+        Returns:
+            Dictionary with recent chats.
+        """
+        args = ["--limit", str(limit), "--days", str(days)]
+        return await run_script("messages/list-chats.sh", args, timeout=10)
+
+
+class SearchMessagesTask(Task):
+    """Search iMessage history."""
+
+    @property
+    def name(self) -> str:
+        return "search_imessages"
+
+    @property
+    def description(self) -> str:
+        return (
+            "Search iMessage/SMS history by text content or sender. "
+            "Reads from chat.db (requires Full Disk Access). "
+            "At least query or from_handle is required."
+        )
+
+    async def execute(
+        self,
+        query: str | None = None,
+        from_handle: str | None = None,
+        days: int = 7,
+        limit: int = 20,
+    ) -> dict[str, Any]:
+        """Search messages.
+
+        Args:
+            query: Text to search for in message content.
+            from_handle: Sender phone number or email to filter by.
+            days: Only search messages from the last N days (default: 7).
+            limit: Maximum number of results (default: 20).
+
+        Returns:
+            Dictionary with matching messages.
+        """
+        if not query and not from_handle:
+            return {"success": False, "error": "Must specify at least query or from_handle"}
+
+        args = []
+        if query:
+            args.extend(["--query", query])
+        if from_handle:
+            args.extend(["--from", from_handle])
+        args.extend(["--days", str(days)])
+        args.extend(["--limit", str(limit)])
+
+        return await run_script("messages/search-messages.sh", args, timeout=15)
+
+
+# =============================================================================
+# SYSTEM CONTROL TASKS
+# =============================================================================
+
+class GetSystemStatusTask(Task):
+    """Get current system status (WiFi, Bluetooth, volume, dark mode, DND)."""
+
+    @property
+    def name(self) -> str:
+        return "get_system_status"
+
+    @property
+    def description(self) -> str:
+        return (
+            "Get the current system status including WiFi (on/off and network name), "
+            "Bluetooth (on/off), volume (level and muted state), dark mode, and Do Not Disturb."
+        )
+
+    async def execute(self) -> dict[str, Any]:
+        """Get system status.
+
+        Returns:
+            Dictionary with current system status.
+        """
+        return await run_script("system/get-system-status.sh", timeout=10)
+
+
+class ToggleWifiTask(Task):
+    """Toggle WiFi on or off."""
+
+    @property
+    def name(self) -> str:
+        return "toggle_wifi"
+
+    @property
+    def description(self) -> str:
+        return (
+            "Toggle WiFi on or off, or set to a specific state. "
+            "Auto-detects the WiFi hardware device. Idempotent — reports if already in desired state."
+        )
+
+    async def execute(self, state: str | None = None) -> dict[str, Any]:
+        """Toggle WiFi.
+
+        Args:
+            state: Desired state — "on", "off", or None to toggle.
+
+        Returns:
+            Dictionary with WiFi state after change.
+        """
+        args = []
+        if state == "on":
+            args.append("--on")
+        elif state == "off":
+            args.append("--off")
+
+        return await run_script("system/toggle-wifi.sh", args, timeout=10)
+
+
+class ToggleBluetoothTask(Task):
+    """Toggle Bluetooth on or off."""
+
+    @property
+    def name(self) -> str:
+        return "toggle_bluetooth"
+
+    @property
+    def description(self) -> str:
+        return (
+            "Toggle Bluetooth on or off, or set to a specific state. "
+            "Uses IOBluetooth framework (no third-party deps). Idempotent."
+        )
+
+    async def execute(self, state: str | None = None) -> dict[str, Any]:
+        """Toggle Bluetooth.
+
+        Args:
+            state: Desired state — "on", "off", or None to toggle.
+
+        Returns:
+            Dictionary with Bluetooth state after change.
+        """
+        args = []
+        if state == "on":
+            args.append("--on")
+        elif state == "off":
+            args.append("--off")
+
+        return await run_script("system/toggle-bluetooth.sh", args, timeout=10)
+
+
+class ListBluetoothDevicesTask(Task):
+    """List paired Bluetooth devices."""
+
+    @property
+    def name(self) -> str:
+        return "list_bluetooth_devices"
+
+    @property
+    def description(self) -> str:
+        return "List paired Bluetooth devices with their connection status."
+
+    async def execute(
+        self,
+        connected_only: bool = False,
+        limit: int = 20,
+    ) -> dict[str, Any]:
+        """List Bluetooth devices.
+
+        Args:
+            connected_only: If True, only show connected devices.
+            limit: Maximum number of devices to return (default: 20).
+
+        Returns:
+            Dictionary with Bluetooth device list.
+        """
+        args = []
+        if connected_only:
+            args.append("--connected-only")
+        args.extend(["--limit", str(limit)])
+
+        return await run_script("system/list-bluetooth-devices.sh", args, timeout=10)
+
+
+class SetVolumeTask(Task):
+    """Set system volume level or mute/unmute."""
+
+    @property
+    def name(self) -> str:
+        return "set_volume"
+
+    @property
+    def description(self) -> str:
+        return (
+            "Set the system output volume level (0-100) and/or mute/unmute. "
+            "Can set level and mute state independently or together."
+        )
+
+    async def execute(
+        self,
+        level: int | None = None,
+        mute: bool | None = None,
+    ) -> dict[str, Any]:
+        """Set volume.
+
+        Args:
+            level: Volume level from 0 to 100.
+            mute: True to mute, False to unmute, None to leave unchanged.
+
+        Returns:
+            Dictionary with volume state after change.
+        """
+        if level is None and mute is None:
+            return {"success": False, "error": "Must specify level or mute"}
+
+        args = []
+        if level is not None:
+            args.extend(["--level", str(level)])
+        if mute is True:
+            args.append("--mute")
+        elif mute is False:
+            args.append("--unmute")
+
+        return await run_script("system/set-volume.sh", args, timeout=10)
+
+
+class ToggleDarkModeTask(Task):
+    """Toggle dark mode on or off."""
+
+    @property
+    def name(self) -> str:
+        return "toggle_dark_mode"
+
+    @property
+    def description(self) -> str:
+        return (
+            "Toggle macOS dark mode on or off, or set to a specific state. "
+            "Idempotent — reports if already in desired state."
+        )
+
+    async def execute(self, state: str | None = None) -> dict[str, Any]:
+        """Toggle dark mode.
+
+        Args:
+            state: Desired state — "on", "off", or None to toggle.
+
+        Returns:
+            Dictionary with dark mode state after change.
+        """
+        args = []
+        if state == "on":
+            args.append("--on")
+        elif state == "off":
+            args.append("--off")
+
+        return await run_script("system/toggle-dark-mode.sh", args, timeout=10)
+
+
+class ToggleDndTask(Task):
+    """Toggle Do Not Disturb on or off."""
+
+    @property
+    def name(self) -> str:
+        return "toggle_dnd"
+
+    @property
+    def description(self) -> str:
+        return (
+            "Toggle Do Not Disturb (Focus mode) on or off. "
+            "Uses a Shortcuts bridge — requires a shortcut named 'Toggle Do Not Disturb'. "
+            "Outputs setup instructions if the shortcut is not found."
+        )
+
+    async def execute(self, state: str | None = None) -> dict[str, Any]:
+        """Toggle Do Not Disturb.
+
+        Args:
+            state: Desired state — "on", "off", or None to toggle.
+
+        Returns:
+            Dictionary with DND state or setup instructions.
+        """
+        args = []
+        if state == "on":
+            args.append("--on")
+        elif state == "off":
+            args.append("--off")
+
+        return await run_script("system/toggle-dnd.sh", args, timeout=15)
+
+
+# =============================================================================
 # REGISTRATION HELPER
 # =============================================================================
 
@@ -1692,3 +2230,23 @@ def register_macos_tasks(registry) -> None:
     # Web tasks
     registry.register(GetHackerNewsTask())
     registry.register(GoogleSearchTask())
+
+    # Contacts tasks
+    registry.register(SearchContactsTask())
+    registry.register(GetContactTask())
+    registry.register(CreateContactTask())
+    registry.register(ListContactGroupsTask())
+
+    # Messages tasks
+    registry.register(SendMessageTask())
+    registry.register(ListChatsTask())
+    registry.register(SearchMessagesTask())
+
+    # System tasks
+    registry.register(GetSystemStatusTask())
+    registry.register(ToggleWifiTask())
+    registry.register(ToggleBluetoothTask())
+    registry.register(ListBluetoothDevicesTask())
+    registry.register(SetVolumeTask())
+    registry.register(ToggleDarkModeTask())
+    registry.register(ToggleDndTask())
