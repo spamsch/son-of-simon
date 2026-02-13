@@ -42,6 +42,7 @@ DAYS=""
 LIMIT=20
 ALL_MAILBOXES=false
 WITH_CONTENT=false
+WITH_LINKS=false
 
 # Parse arguments
 while [[ $# -gt 0 ]]; do
@@ -84,6 +85,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         --with-content)
             WITH_CONTENT=true
+            shift
+            ;;
+        --with-links)
+            WITH_LINKS=true
             shift
             ;;
         -h|--help)
@@ -340,27 +345,30 @@ tell application "Mail"
             end try
 
             -- Extract links from HTML source (plain text rendering loses href URLs)
-            try
-                set msgSource to source of msg
-                set tmpFile to (do shell script "mktemp /tmp/macbot_mail_XXXXXX")
+            -- Only when --with-links is set (fetching MIME source is slow)
+            if $WITH_LINKS then
                 try
-                    set fh to open for access POSIX file tmpFile with write permission
-                    write msgSource to fh as «class utf8»
-                    close access fh
+                    set msgSource to source of msg
+                    set tmpFile to (do shell script "mktemp /tmp/macbot_mail_XXXXXX")
+                    try
+                        set fh to open for access POSIX file tmpFile with write permission
+                        write msgSource to fh as «class utf8»
+                        close access fh
+                    on error
+                        try
+                            close access fh
+                        end try
+                    end try
+                    set extractedLinks to do shell script "python3 " & quoted form of "$SCRIPT_DIR/extract-links.py" & " " & quoted form of tmpFile & "; rm -f " & quoted form of tmpFile
+                    if extractedLinks is not "" then
+                        set output to output & "Links:" & return & extractedLinks & return
+                    end if
                 on error
                     try
-                        close access fh
+                        do shell script "rm -f " & quoted form of tmpFile
                     end try
                 end try
-                set extractedLinks to do shell script "python3 " & quoted form of "$SCRIPT_DIR/extract-links.py" & " " & quoted form of tmpFile & "; rm -f " & quoted form of tmpFile
-                if extractedLinks is not "" then
-                    set output to output & "Links:" & return & extractedLinks & return
-                end if
-            on error
-                try
-                    do shell script "rm -f " & quoted form of tmpFile
-                end try
-            end try
+            end if
         end if
 
         set output to output & "---" & return
