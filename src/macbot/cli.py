@@ -750,6 +750,140 @@ def cmd_start(args: argparse.Namespace) -> None:
     run_service(daemon=args.daemon, verbose=args.verbose, foreground=args.foreground)
 
 
+def cmd_connect(args: argparse.Namespace) -> None:
+    """Connect to a running service's shared agent via Unix socket."""
+    from macbot.service import SOCKET_PATH, get_service_pid
+
+    pid = get_service_pid()
+    if not pid:
+        console.print("[red]Service is not running.[/red] Start it first with: son start")
+        sys.exit(1)
+
+    if not SOCKET_PATH.exists():
+        console.print("[red]Socket not found.[/red] The service may still be starting up.")
+        console.print(f"Expected: {SOCKET_PATH}")
+        sys.exit(1)
+
+    console.print(f"[dim]Connecting to service (PID {pid})...[/dim]")
+
+    async def _connect_loop() -> None:
+        import readline as rl
+
+        history_file = MACBOT_DIR / "connect_history"
+        try:
+            rl.read_history_file(history_file)
+        except FileNotFoundError:
+            pass
+        rl.set_history_length(500)
+
+        try:
+            reader, writer = await asyncio.open_unix_connection(str(SOCKET_PATH))
+        except (ConnectionRefusedError, FileNotFoundError) as e:
+            console.print(f"[red]Cannot connect:[/red] {e}")
+            return
+
+        # Wait for ready signal
+        raw = await reader.readline()
+        if not raw:
+            console.print("[red]Connection closed by service.[/red]")
+            return
+
+        msg = json.loads(raw.decode())
+        if msg.get("type") != "ready":
+            console.print(f"[yellow]Unexpected initial message:[/yellow] {msg}")
+
+        console.print("[green]Connected![/green] Type your message, or 'quit' to disconnect.")
+        console.print("[dim]Commands: 'clear' resets conversation, 'quit' disconnects.[/dim]\n")
+
+        loop = asyncio.get_event_loop()
+        from concurrent.futures import ThreadPoolExecutor
+        executor = ThreadPoolExecutor(max_workers=1)
+
+        try:
+            while True:
+                try:
+                    user_input = await loop.run_in_executor(
+                        executor, lambda: input("\x1b[1;34m→\x1b[0m ").strip()
+                    )
+                except EOFError:
+                    break
+
+                if not user_input:
+                    continue
+
+                if user_input.lower() in ("quit", "exit", "q"):
+                    break
+
+                # Send message
+                request = json.dumps({"type": "message", "text": user_input}) + "\n"
+                writer.write(request.encode())
+                await writer.drain()
+
+                # Read events until "done"
+                await _read_response(reader)
+
+        except (ConnectionResetError, BrokenPipeError):
+            console.print("\n[red]Connection lost.[/red]")
+        except KeyboardInterrupt:
+            console.print("\n[dim]Disconnecting...[/dim]")
+        finally:
+            rl.write_history_file(history_file)
+            try:
+                writer.close()
+                await writer.wait_closed()
+            except Exception:
+                pass
+            executor.shutdown(wait=False)
+
+        console.print("[dim]Disconnected.[/dim]")
+
+    async def _read_response(reader: asyncio.StreamReader) -> None:
+        """Read JSON-lines events from socket until 'done' event."""
+        while True:
+            raw = await reader.readline()
+            if not raw:
+                console.print("[red]Connection closed.[/red]")
+                return
+
+            try:
+                event = json.loads(raw.decode())
+            except json.JSONDecodeError:
+                continue
+
+            evt_type = event.get("type")
+
+            if evt_type == "done":
+                console.print("[dim]─" * 60 + "[/dim]\n")
+                return
+
+            if evt_type == "chunk":
+                text = event.get("text", "")
+                if text:
+                    console.print()
+                    console.print("[bold green]A:[/bold green]", end=" ")
+                    console.print(Markdown(text))
+
+            elif evt_type == "tool_call":
+                name = event.get("name", "?")
+                console.print(f"  [dim]→ {name}[/dim]")
+
+            elif evt_type == "tool_result":
+                success = event.get("success", True)
+                if not success:
+                    error = event.get("error", "unknown error")
+                    console.print(f"  [red]✗ {error}[/red]")
+
+            elif evt_type == "error":
+                text = event.get("text", "Unknown error")
+                console.print(f"[red]Error: {text}[/red]")
+                return
+
+    try:
+        asyncio.run(_connect_loop())
+    except KeyboardInterrupt:
+        console.print("\n[dim]Disconnected.[/dim]")
+
+
 def cmd_stop(args: argparse.Namespace) -> None:
     """Stop the macbot service."""
     from macbot.service import get_service_pid, stop_service
@@ -3045,6 +3179,16 @@ Use [bold]son <command> --help[/bold] for command details.
         help="Show detailed output"
     )
     start_parser.set_defaults(func=cmd_start)
+
+    # Connect command
+    connect_parser = subparsers.add_parser(
+        "connect",
+        help="Connect to a running service's shared agent",
+        description="Open an interactive session that connects to the running service "
+                    "via Unix domain socket. Shares conversation context with the GUI "
+                    "and Telegram."
+    )
+    connect_parser.set_defaults(func=cmd_connect)
 
     # Stop command
     stop_parser = subparsers.add_parser(

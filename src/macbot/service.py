@@ -4,12 +4,16 @@ Runs the cron scheduler and Telegram listener together as a single service.
 """
 
 import asyncio
+import json
 import logging
 import os
 import signal
+import stat
 from collections.abc import Callable
+from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 
 from macbot.config import settings
 from macbot.core.agent import Agent
@@ -23,6 +27,73 @@ MACBOT_DIR = Path.home() / ".macbot"
 PID_FILE = MACBOT_DIR / "service.pid"
 LOG_FILE = MACBOT_DIR / "service.log"
 HEARTBEAT_FILE = MACBOT_DIR / "heartbeat.md"
+SOCKET_PATH = MACBOT_DIR / "session.sock"
+
+
+@dataclass
+class QueuedMessage:
+    """A message waiting to be processed by the agent."""
+
+    text: str
+    emit: Callable[[dict], None] | None = None
+    result_future: asyncio.Future = field(default_factory=lambda: asyncio.get_event_loop().create_future())
+
+
+class AgentQueue:
+    """Serializes agent.run() calls through an asyncio.Queue.
+
+    This ensures only one agent.run() executes at a time, preventing
+    interleaved message mutations when multiple clients (stdin, Telegram,
+    socket) share the same Agent instance.
+    """
+
+    def __init__(self, agent: Agent) -> None:
+        self.agent = agent
+        self._queue: asyncio.Queue[QueuedMessage | None] = asyncio.Queue()
+        self._running = False
+
+    async def submit(self, text: str, emit: Callable[[dict], None] | None = None) -> str:
+        """Enqueue a message and wait for the result.
+
+        Args:
+            text: The user message to send to the agent.
+            emit: Optional callback for streaming events.
+
+        Returns:
+            The agent's text response.
+        """
+        loop = asyncio.get_event_loop()
+        msg = QueuedMessage(text=text, emit=emit, result_future=loop.create_future())
+        await self._queue.put(msg)
+        return await msg.result_future
+
+    async def run_consumer(self) -> None:
+        """Process queued messages one at a time. Runs until stop() is called."""
+        self._running = True
+        while self._running:
+            msg = await self._queue.get()
+            if msg is None:
+                # Poison pill — shut down
+                break
+            try:
+                result = await self.agent.run(
+                    msg.text,
+                    stream=False,
+                    continue_conversation=True,
+                    on_event=msg.emit,
+                )
+                if not msg.result_future.done():
+                    msg.result_future.set_result(result)
+            except Exception as e:
+                if not msg.result_future.done():
+                    msg.result_future.set_exception(e)
+            finally:
+                self._queue.task_done()
+
+    def stop(self) -> None:
+        """Signal the consumer to stop after current message completes."""
+        self._running = False
+        self._queue.put_nowait(None)
 
 
 def get_service_pid() -> int | None:
@@ -79,12 +150,16 @@ class MacbotService:
         self.registry = create_default_registry()
         self.agent = Agent(self.registry)  # Default agent for cron jobs
         self._chat_agents: dict[str, Agent] = {}  # Per-chat agents for Telegram conversations
+        self._agent_queues: dict[str, AgentQueue] = {}  # Per-chat queues
+        self._cron_queue: AgentQueue | None = None  # Queue for cron/heartbeat
+        self._default_queue: AgentQueue | None = None  # Queue for stdin/socket
         self._console = Console(stderr=True) if stderr_console else Console()
         self.cron_service: CronService | None = None
         self.telegram_service = None
         self._running = False
         self._tasks: list[asyncio.Task] = []
         self._emit: Callable | None = None
+        self._socket_server: asyncio.Server | None = None
 
     def reload_skills(self) -> None:
         """Reload skills from disk for all agents.
@@ -119,6 +194,41 @@ class MacbotService:
         if chat_id not in self._chat_agents:
             self._chat_agents[chat_id] = Agent(self.registry)
         return self._chat_agents[chat_id]
+
+    def _get_agent_queue(self, chat_id: str) -> AgentQueue:
+        """Get or create a queue for a specific chat agent.
+
+        Args:
+            chat_id: The Telegram chat ID
+
+        Returns:
+            AgentQueue wrapping the per-chat agent
+        """
+        if chat_id not in self._agent_queues:
+            agent = self._get_chat_agent(chat_id)
+            queue = AgentQueue(agent)
+            self._agent_queues[chat_id] = queue
+            # Start consumer task if service is running
+            if self._running:
+                self._tasks.append(asyncio.create_task(queue.run_consumer()))
+        return self._agent_queues[chat_id]
+
+    def _get_default_queue(self) -> AgentQueue:
+        """Get the default queue shared by stdin/socket clients.
+
+        Uses the primary Telegram chat agent if configured, else the
+        default agent.
+
+        Returns:
+            AgentQueue for the default/shared agent
+        """
+        if self._default_queue is None:
+            if settings.telegram_chat_id:
+                agent = self._get_chat_agent(settings.telegram_chat_id)
+            else:
+                agent = self.agent
+            self._default_queue = AgentQueue(agent)
+        return self._default_queue
 
     def _save_chat_id(self, chat_id: str) -> None:
         """Auto-save a detected Telegram chat ID to the config file.
@@ -193,7 +303,7 @@ class MacbotService:
                 # Show cron job in console
                 self._console.print(f"\n[{timestamp}] ⏰ Cron: {payload.message[:100]}{'...' if len(payload.message) > 100 else ''}")
                 logger.info(f"Cron: Running '{payload.message[:50]}...'")
-                result = await self.agent.run(payload.message, stream=False)
+                result = await self._cron_queue.submit(payload.message)
                 logger.info(f"Cron: Completed, result length: {len(result)}")
                 return ExecutionResult(success=True, output=result)
             except Exception as e:
@@ -248,36 +358,33 @@ class MacbotService:
             await self.telegram_service.send_message("⏳ Working on it...", chat_id, parse_mode=None)
 
             try:
-                # Get per-chat agent and continue conversation
-                agent = self._get_chat_agent(chat_id)
+                # Build a combined emit that forwards to both GUI and Telegram progress
+                tools_called: list[str] = []
 
-                # Track tool calls for progress feedback
-                tools_called = []
-                original_execute = agent._execute_tool_calls
-
-                async def tracking_execute(response, verbose=False, **kwargs):
-                    for tc in response.tool_calls:
-                        tools_called.append(tc.name)
-                        # Send progress update every few tools
-                        if len(tools_called) == 1:
-                            await self.telegram_service.send_message(
-                                f"🔧 `{tc.name}`...", chat_id, parse_mode="Markdown"
+                def _combined_emit(obj: dict) -> None:
+                    # Forward to GUI
+                    if self._emit:
+                        self._emit(obj)
+                    # Track tool calls for Telegram progress
+                    if obj.get("type") == "tool_call":
+                        tools_called.append(obj.get("name", "?"))
+                        count = len(tools_called)
+                        name = obj.get("name", "?")
+                        if count == 1:
+                            asyncio.get_event_loop().create_task(
+                                self.telegram_service.send_message(
+                                    f"🔧 `{name}`...", chat_id, parse_mode="Markdown"
+                                )
                             )
-                        elif len(tools_called) % 3 == 0:
-                            await self.telegram_service.send_message(
-                                f"🔧 `{tc.name}` ({len(tools_called)} steps)...", chat_id, parse_mode="Markdown"
+                        elif count % 3 == 0:
+                            asyncio.get_event_loop().create_task(
+                                self.telegram_service.send_message(
+                                    f"🔧 `{name}` ({count} steps)...", chat_id, parse_mode="Markdown"
+                                )
                             )
-                    return await original_execute(response, verbose, **kwargs)
 
-                agent._execute_tool_calls = tracking_execute
-
-                result = await agent.run(
-                    text, stream=False, continue_conversation=True,
-                    on_event=self._emit,
-                )
-
-                # Restore original method
-                agent._execute_tool_calls = original_execute
+                queue = self._get_agent_queue(chat_id)
+                result = await queue.submit(text, emit=_combined_emit)
 
                 # Emit outgoing response to GUI
                 if self._emit:
@@ -353,7 +460,7 @@ class MacbotService:
 
                 self._console.print(f"\n[{timestamp}] 💓 Heartbeat: {content[:100]}{'...' if len(content) > 100 else ''}")
                 logger.info(f"Heartbeat: Running '{content[:50]}...'")
-                result = await self.agent.run(content, stream=False)
+                result = await self._cron_queue.submit(content)
                 logger.info(f"Heartbeat: Completed, result length: {len(result)}")
                 from rich.markdown import Markdown
                 from rich.panel import Panel
@@ -463,18 +570,13 @@ class MacbotService:
                          {"type": "done"}
                          {"type": "error", "text": "..."}
         """
-        import json
         import sys
         from concurrent.futures import ThreadPoolExecutor
 
         executor = ThreadPoolExecutor(max_workers=1)
         loop = asyncio.get_event_loop()
 
-        # Use the same agent as the primary Telegram chat for shared context
-        if settings.telegram_chat_id:
-            agent = self._get_chat_agent(settings.telegram_chat_id)
-        else:
-            agent = self.agent
+        queue = self._get_default_queue()
 
         def _emit(obj: dict) -> None:
             sys.stdout.write(json.dumps(obj) + "\n")
@@ -495,9 +597,10 @@ class MacbotService:
                 raw = await loop.run_in_executor(executor, read_line)
 
                 if raw is None or raw == "":
-                    # EOF — stdin closed
-                    await asyncio.sleep(0.1)
-                    continue
+                    # EOF — stdin closed (Tauri app quit)
+                    logger.info("Stdin closed (EOF), initiating shutdown")
+                    await self.stop()
+                    break
 
                 raw = raw.strip()
                 if not raw:
@@ -519,10 +622,7 @@ class MacbotService:
                     continue
 
                 try:
-                    result = await agent.run(
-                        text, stream=False,
-                        continue_conversation=True, on_event=_emit,
-                    )
+                    result = await queue.submit(text, emit=_emit)
                     _emit({"type": "chunk", "text": result})
                 except Exception as e:
                     _emit({"type": "error", "text": str(e)})
@@ -558,12 +658,11 @@ class MacbotService:
         loop = asyncio.get_event_loop()
         console = Console()
 
-        # Use the same agent as the primary Telegram chat for shared context
+        queue = self._get_default_queue()
+        agent = queue.agent
+
         if settings.telegram_chat_id:
-            agent = self._get_chat_agent(settings.telegram_chat_id)
             console.print(f"\n[dim][Context shared with Telegram chat {settings.telegram_chat_id}][/dim]")
-        else:
-            agent = self.agent
 
         console.print("[dim][Ready for input - type a query or 'quit' to exit][/dim]")
         console.print("[dim][Commands: 'clear' resets conversation, 'stats' shows tokens, 'context' shows structure][/dim]\n")
@@ -626,7 +725,7 @@ class MacbotService:
                     from macbot.utils.cancellable import run_with_escape_cancel
 
                     result, cancelled = await run_with_escape_cancel(
-                        agent.run(user_input, stream=False, continue_conversation=True)
+                        queue.submit(user_input)
                     )
 
                     if cancelled:
@@ -648,6 +747,113 @@ class MacbotService:
 
         executor.shutdown(wait=False)
 
+    async def _run_socket_server(self) -> None:
+        """Run a Unix domain socket server for external client connections.
+
+        Accepts connections from `son connect` and speaks the same JSON-lines
+        protocol as the stdin reader.
+        """
+        # Clean up stale socket
+        SOCKET_PATH.unlink(missing_ok=True)
+
+        self._socket_server = await asyncio.start_unix_server(
+            self._handle_socket_client,
+            path=str(SOCKET_PATH),
+        )
+        # Restrict permissions to owner only
+        os.chmod(SOCKET_PATH, stat.S_IRUSR | stat.S_IWUSR)
+        logger.info(f"Socket server listening at {SOCKET_PATH}")
+
+        try:
+            await self._socket_server.serve_forever()
+        except asyncio.CancelledError:
+            pass
+        finally:
+            self._socket_server.close()
+            SOCKET_PATH.unlink(missing_ok=True)
+
+    async def _handle_socket_client(
+        self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter
+    ) -> None:
+        """Handle a single socket client connection.
+
+        Speaks the same JSON-lines protocol as _run_stdin_reader.
+        """
+        peer = writer.get_extra_info("peername") or "unknown"
+        logger.info(f"Socket client connected: {peer}")
+
+        queue = self._get_default_queue()
+
+        def _emit(obj: dict) -> None:
+            try:
+                data = json.dumps(obj) + "\n"
+                writer.write(data.encode())
+            except Exception:
+                pass  # Client may have disconnected
+
+        try:
+            _emit({"type": "ready"})
+            await writer.drain()
+
+            while self._running:
+                raw_bytes = await reader.readline()
+                if not raw_bytes:
+                    # Client disconnected
+                    break
+
+                raw = raw_bytes.decode().strip()
+                if not raw:
+                    continue
+
+                try:
+                    msg = json.loads(raw)
+                except json.JSONDecodeError:
+                    _emit({"type": "error", "text": "Invalid JSON input"})
+                    await writer.drain()
+                    continue
+
+                if msg.get("type") != "message":
+                    _emit({"type": "error", "text": f"Unknown message type: {msg.get('type')}"})
+                    await writer.drain()
+                    continue
+
+                text = msg.get("text", "").strip()
+                if not text:
+                    _emit({"type": "error", "text": "Empty message"})
+                    await writer.drain()
+                    continue
+
+                try:
+                    result = await queue.submit(text, emit=_emit)
+                    _emit({"type": "chunk", "text": result})
+                except Exception as e:
+                    _emit({"type": "error", "text": str(e)})
+
+                _emit({"type": "done"})
+                await writer.drain()
+
+        except (ConnectionResetError, BrokenPipeError):
+            logger.debug(f"Socket client disconnected: {peer}")
+        except asyncio.CancelledError:
+            pass
+        except Exception as e:
+            logger.error(f"Socket client error: {e}")
+        finally:
+            try:
+                writer.close()
+                await writer.wait_closed()
+            except Exception:
+                pass
+            logger.info(f"Socket client disconnected: {peer}")
+
+    async def _stop_socket_server(self) -> None:
+        """Stop the socket server and clean up."""
+        if self._socket_server:
+            self._socket_server.close()
+            await self._socket_server.wait_closed()
+            self._socket_server = None
+        SOCKET_PATH.unlink(missing_ok=True)
+
     async def start(self, interactive: bool = False, stdin_reader: bool = False) -> None:
         """Start all configured services.
 
@@ -664,6 +870,14 @@ class MacbotService:
 
         has_cron = self._setup_cron()
         has_telegram = self._setup_telegram()
+
+        # Initialize cron queue (shared by cron jobs and heartbeat)
+        self._cron_queue = AgentQueue(self.agent)
+        self._tasks.append(asyncio.create_task(self._cron_queue.run_consumer()))
+
+        # Initialize default queue (shared by stdin/socket/interactive)
+        default_queue = self._get_default_queue()
+        self._tasks.append(asyncio.create_task(default_queue.run_consumer()))
 
         # Heartbeat always runs
         logger.info(f"Starting heartbeat (every {settings.heartbeat_interval}s)")
@@ -688,6 +902,10 @@ class MacbotService:
             else:
                 logger.error(f"Telegram token invalid: {msg}")
 
+        # Always start socket server for `son connect`
+        MACBOT_DIR.mkdir(parents=True, exist_ok=True)
+        self._tasks.append(asyncio.create_task(self._run_socket_server()))
+
         # Add interactive loop if requested (CLI mode)
         if interactive:
             self._tasks.append(asyncio.create_task(self._run_interactive()))
@@ -707,6 +925,17 @@ class MacbotService:
     async def stop(self) -> None:
         """Stop all services gracefully."""
         self._running = False
+
+        # Stop socket server
+        await self._stop_socket_server()
+
+        # Stop all queues
+        if self._cron_queue:
+            self._cron_queue.stop()
+        if self._default_queue:
+            self._default_queue.stop()
+        for q in self._agent_queues.values():
+            q.stop()
 
         if self.telegram_service:
             await self.telegram_service.stop()
