@@ -24,6 +24,8 @@ pub struct OnboardingData {
 pub struct PermissionsData {
     pub accessibility: bool,
     pub automation: std::collections::HashMap<String, bool>,
+    #[serde(default)]
+    pub folder_access: std::collections::HashMap<String, bool>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -80,6 +82,11 @@ impl Default for OnboardingState {
         automation.insert("Notes".to_string(), false);
         automation.insert("Safari".to_string(), false);
 
+        let mut folder_access = std::collections::HashMap::new();
+        folder_access.insert("Documents".to_string(), false);
+        folder_access.insert("Downloads".to_string(), false);
+        folder_access.insert("Desktop".to_string(), false);
+
         Self {
             version: 1,
             completed: false,
@@ -88,6 +95,7 @@ impl Default for OnboardingState {
                 permissions: PermissionsData {
                     accessibility: false,
                     automation,
+                    folder_access,
                 },
                 api_key: ApiKeyData {
                     provider: "openai".to_string(),
@@ -196,6 +204,20 @@ fn open_system_preferences(pane: String) -> Result<(), String> {
     Ok(())
 }
 
+// Check if we can read common user folders (TCC-protected)
+#[tauri::command]
+fn check_folder_access() -> std::collections::HashMap<String, bool> {
+    let mut results = std::collections::HashMap::new();
+    if let Some(home) = dirs::home_dir() {
+        for folder in &["Documents", "Downloads", "Desktop"] {
+            let path = home.join(folder);
+            let accessible = std::fs::read_dir(&path).is_ok();
+            results.insert(folder.to_string(), accessible);
+        }
+    }
+    results
+}
+
 // Check if accessibility permission is granted for THIS app
 #[tauri::command]
 fn check_accessibility_permission() -> bool {
@@ -222,6 +244,7 @@ pub fn run() {
             write_config,
             open_system_preferences,
             check_accessibility_permission,
+            check_folder_access,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

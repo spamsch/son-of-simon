@@ -11,6 +11,8 @@
     ArrowLeft,
     Info,
     CheckCircle,
+    FolderOpen,
+    X,
   } from "lucide-svelte";
   import { onboardingStore, type PermissionsData } from "$lib/stores/onboarding.svelte";
 
@@ -26,6 +28,20 @@
 
   let accessibilityGranted = $state(false);
   let checking = $state(true);
+  let folderAccess = $state<Record<string, boolean>>({ Documents: false, Downloads: false, Desktop: false });
+  let checkingFolders = $state(false);
+
+  async function checkFolderAccess() {
+    checkingFolders = true;
+    try {
+      const result = await invoke<Record<string, boolean>>("check_folder_access");
+      folderAccess = result;
+      await onboardingStore.updatePermissions({ folder_access: result });
+    } catch (e) {
+      console.error("Failed to check folder access:", e);
+    }
+    checkingFolders = false;
+  }
 
   onMount(async () => {
     // Check if accessibility is already granted
@@ -39,6 +55,9 @@
       console.error("Failed to check accessibility:", e);
     }
     checking = false;
+
+    // Check folder access
+    await checkFolderAccess();
   });
 
   async function openAccessibilitySettings() {
@@ -50,6 +69,12 @@
   async function openAutomationSettings() {
     await invoke("open_system_preferences", {
       pane: "com.apple.preference.security?Privacy_Automation",
+    });
+  }
+
+  async function openFilesAndFoldersSettings() {
+    await invoke("open_system_preferences", {
+      pane: "com.apple.preference.security?Privacy_FilesAndFolders",
     });
   }
 
@@ -161,6 +186,47 @@
           <p class="text-xs text-text-muted">
             You can also manage these permissions later in System Settings → Privacy & Security → Automation
           </p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Step 3: Files & Folders Access -->
+  <div class="mb-6">
+    <div class="flex items-start gap-4 p-5 bg-bg-card rounded-xl border border-border">
+      <div class="w-8 h-8 rounded-full bg-primary text-white flex items-center justify-center font-bold shrink-0">
+        3
+      </div>
+      <div class="flex-1">
+        <h3 class="font-semibold text-text mb-2">Files & Folders Access</h3>
+        <p class="text-sm text-text-muted mb-4">
+          Son of Simon needs access to common folders for downloading attachments, searching files, and managing documents.
+        </p>
+
+        <!-- Per-folder status -->
+        <div class="space-y-2 mb-4">
+          {#each Object.entries(folderAccess) as [folder, accessible]}
+            <div class="flex items-center gap-2">
+              {#if accessible}
+                <Check class="w-4 h-4 text-success" />
+              {:else}
+                <X class="w-4 h-4 text-error" />
+              {/if}
+              <span class="text-sm" class:text-text={accessible} class:text-text-muted={!accessible}>
+                ~/{folder}
+              </span>
+            </div>
+          {/each}
+        </div>
+
+        <div class="flex gap-3">
+          <Button onclick={openFilesAndFoldersSettings}>
+            Open Files & Folders Settings
+            <ExternalLink class="w-4 h-4" />
+          </Button>
+          <Button variant="secondary" onclick={checkFolderAccess} loading={checkingFolders}>
+            {checkingFolders ? "Checking..." : "Recheck"}
+          </Button>
         </div>
       </div>
     </div>
