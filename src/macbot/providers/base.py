@@ -15,9 +15,26 @@ class Message(BaseModel):
     """A message in the conversation."""
 
     role: str  # "user", "assistant", "system", or "tool"
-    content: str | None = None
+    content: str | list[dict[str, Any]] | None = None  # str for text, list for multimodal content blocks
     tool_calls: list["ToolCall"] | None = None  # For assistant messages with tool calls
     tool_call_id: str | None = None  # For tool result messages
+
+    @property
+    def content_text(self) -> str:
+        """Extract the text portion of content for logging/display.
+
+        Returns the string as-is for str content, or extracts the first
+        text block from a content block list.
+        """
+        if isinstance(self.content, str):
+            return self.content
+        if isinstance(self.content, list):
+            for block in self.content:
+                if isinstance(block, dict) and block.get("type") == "text":
+                    text = block.get("text", "")
+                    return str(text)
+            return ""
+        return ""
 
 
 class ToolCall(BaseModel):

@@ -118,6 +118,8 @@ class LiteLLMProvider(LLMProvider):
                     "content": msg.content or "",
                 })
             else:
+                # Pass content as-is — LiteLLM/OpenAI natively support
+                # content block arrays for multimodal messages
                 litellm_messages.append({
                     "role": msg.role,
                     "content": msg.content,

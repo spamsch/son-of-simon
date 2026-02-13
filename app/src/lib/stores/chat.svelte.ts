@@ -15,6 +15,7 @@ export interface ChatMessage {
   status: "streaming" | "complete" | "error";
   toolCalls?: ToolCall[];
   source?: "chat" | "telegram";
+  imageUrl?: string;
 }
 
 export interface AppPermissions {
@@ -227,6 +228,7 @@ class ChatStore {
         case "telegram_message": {
           const direction = msg.direction as string;
           const text = msg.text as string;
+          const imageUrl = msg.imageUrl as string | undefined;
           if (direction === "incoming") {
             // Incoming Telegram user message
             this._messages.push({
@@ -236,6 +238,7 @@ class ChatStore {
               text,
               status: "complete",
               source: "telegram",
+              imageUrl,
             });
             // Create placeholder for the assistant response (tool calls will attach here)
             this._telegramAssistantId = crypto.randomUUID();

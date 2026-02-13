@@ -88,7 +88,7 @@ class Agent:
 
     async def run(
         self,
-        goal: str,
+        goal: str | list[dict[str, Any]],
         verbose: bool = False,
         stream: bool = True,
         continue_conversation: bool = False,
@@ -97,7 +97,8 @@ class Agent:
         """Run the agent loop to achieve a goal.
 
         Args:
-            goal: The objective for the agent to achieve
+            goal: The objective — a string for text, or a list of content
+                  blocks for multimodal input (e.g., text + image).
             verbose: Whether to print detailed output
             stream: Whether to stream LLM responses
             continue_conversation: If True, append to existing messages instead of resetting.
@@ -119,7 +120,8 @@ class Agent:
         self.iteration = 0
 
         if verbose:
-            console.print(Panel(f"[bold]Goal:[/bold] {goal}", title="Agent Started"))
+            goal_preview = goal if isinstance(goal, str) else Message(role="user", content=goal).content_text
+            console.print(Panel(f"[bold]Goal:[/bold] {goal_preview}", title="Agent Started"))
 
         while self.iteration < self.config.max_iterations:
             self.iteration += 1
