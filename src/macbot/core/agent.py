@@ -41,6 +41,7 @@ class Agent:
         provider: LLMProvider | None = None,
         config: Settings | None = None,
         skills_registry: SkillsRegistry | None = None,
+        system_prompt: str | None = None,
     ) -> None:
         """Initialize the agent.
 
@@ -49,11 +50,14 @@ class Agent:
             provider: LLM provider (auto-configured from settings if not provided)
             config: Settings (uses global settings if not provided)
             skills_registry: Registry of skills (auto-loaded if not provided)
+            system_prompt: Optional system prompt override (replaces default prompt,
+                          system context is still appended)
         """
         self.config = config or settings
         self.task_registry = task_registry
         self.provider = provider or self._create_provider()
         self.skills_registry = skills_registry or get_default_registry()
+        self._system_prompt_override = system_prompt
         self.messages: list[Message] = []
         self.iteration = 0
 
@@ -171,8 +175,13 @@ class Agent:
     def _build_system_prompt(self) -> str:
         """Build a dynamic system prompt with platform and skills context.
 
+        If a system_prompt override was provided at init, uses that instead
+        of the default prompt, with system context appended.
         Dispatches to profile-specific builders based on context_profile setting.
         """
+        if self._system_prompt_override is not None:
+            return self._system_prompt_override + "\n" + self._build_system_context()
+
         profile = self.config.get_context_profile()
         if profile == "compact":
             return self._build_compact_system_prompt()

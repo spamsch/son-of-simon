@@ -73,15 +73,19 @@ __all__ = [
 ]
 
 
-def create_default_registry() -> TaskRegistry:
+def create_default_registry(config: "Settings | None" = None) -> TaskRegistry:
     """Create a new task registry with all default tasks registered.
 
     This creates a fresh registry instance with all built-in tasks.
     Useful when you need an isolated registry.
 
+    Args:
+        config: Optional settings (subagent task uses this to configure itself).
+
     Returns:
         TaskRegistry with all default tasks.
     """
+    from macbot.config import Settings  # noqa: F811
     registry = TaskRegistry()
 
     # Import and register all built-in task classes
@@ -141,5 +145,9 @@ def create_default_registry() -> TaskRegistry:
     # Register core preferences task
     from macbot.tasks.preferences import register_preferences_tasks
     register_preferences_tasks(registry)
+
+    # Register subagent task (passes registry ref so subagents get scoped copies)
+    from macbot.tasks.subagent import RunSubagentTask
+    registry.register(RunSubagentTask(config=config, parent_registry=registry))
 
     return registry
