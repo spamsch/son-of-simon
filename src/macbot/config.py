@@ -139,6 +139,18 @@ Before starting a task, check `get_agent_memory` to see recent context and avoid
         default=2,
         description="Maximum concurrent tasks in subagent lane",
     )
+    subagent_model: str = Field(
+        default="",
+        description="Override model for subagents (empty = auto by tier)",
+    )
+    subagent_max_iterations: int = Field(
+        default=30,
+        description="Maximum iterations for subagent loops",
+    )
+    subagent_timeout: int = Field(
+        default=120,
+        description="Timeout in seconds for subagent execution",
+    )
     queue_warn_after_ms: int = Field(
         default=5000,
         description="Warning threshold for queue wait time in milliseconds",
