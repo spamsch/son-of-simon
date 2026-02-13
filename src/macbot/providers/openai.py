@@ -64,6 +64,8 @@ class OpenAIProvider(LLMProvider):
                     "content": msg.content or "",
                 })
             else:
+                # Pass content as-is — OpenAI natively supports
+                # content block arrays for multimodal messages
                 openai_messages.append({"role": msg.role, "content": msg.content})
 
         # Build request kwargs

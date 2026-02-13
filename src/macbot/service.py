@@ -34,7 +34,7 @@ SOCKET_PATH = MACBOT_DIR / "session.sock"
 class QueuedMessage:
     """A message waiting to be processed by the agent."""
 
-    text: str
+    content: str | list[dict[str, Any]]  # str for text, list for multimodal content blocks
     emit: Callable[[dict], None] | None = None
     result_future: asyncio.Future = field(default_factory=lambda: asyncio.get_event_loop().create_future())
 
@@ -52,18 +52,18 @@ class AgentQueue:
         self._queue: asyncio.Queue[QueuedMessage | None] = asyncio.Queue()
         self._running = False
 
-    async def submit(self, text: str, emit: Callable[[dict], None] | None = None) -> str:
+    async def submit(self, content: str | list[dict[str, Any]], emit: Callable[[dict], None] | None = None) -> str:
         """Enqueue a message and wait for the result.
 
         Args:
-            text: The user message to send to the agent.
+            content: The user message (str) or multimodal content blocks (list).
             emit: Optional callback for streaming events.
 
         Returns:
             The agent's text response.
         """
         loop = asyncio.get_event_loop()
-        msg = QueuedMessage(text=text, emit=emit, result_future=loop.create_future())
+        msg = QueuedMessage(content=content, emit=emit, result_future=loop.create_future())
         await self._queue.put(msg)
         return await msg.result_future
 
@@ -77,7 +77,7 @@ class AgentQueue:
                 break
             try:
                 result = await self.agent.run(
-                    msg.text,
+                    msg.content,
                     stream=False,
                     continue_conversation=True,
                     on_event=msg.emit,
@@ -330,23 +330,36 @@ class MacbotService:
             allowed_users=settings.telegram_allowed_users or None,
         )
 
-        async def message_handler(text: str, chat_id: str) -> str:
+        async def message_handler(content: str | list[dict[str, Any]], chat_id: str) -> str:
             from datetime import datetime
             timestamp = datetime.now().strftime("%H:%M:%S")
+            # Extract text preview for logging
+            if isinstance(content, str):
+                preview = content[:100]
+            else:
+                # Multimodal: extract text block for preview
+                text_parts = [b.get("text", "") for b in content if isinstance(b, dict) and b.get("type") == "text"]
+                preview = (text_parts[0] if text_parts else "[image]")[:100]
             # Show incoming message in console
-            self._console.print(f"\n[{timestamp}] 📩 Telegram: {text[:100]}{'...' if len(text) > 100 else ''}")
-            logger.info(f"Telegram: Message from {chat_id}: {text[:50]}...")
+            self._console.print(f"\n[{timestamp}] 📩 Telegram: {preview}{'...' if len(preview) >= 100 else ''}")
+            logger.info(f"Telegram: Message from {chat_id}: {preview[:50]}...")
 
-            # Emit incoming message to GUI
+            # Emit incoming message to GUI (include image URL if present)
             if self._emit:
-                self._emit({"type": "telegram_message", "text": text, "chat_id": chat_id, "direction": "incoming"})
+                event: dict[str, Any] = {"type": "telegram_message", "text": preview, "chat_id": chat_id, "direction": "incoming"}
+                if isinstance(content, list):
+                    for block in content:
+                        if isinstance(block, dict) and block.get("type") == "image_url":
+                            event["imageUrl"] = block["image_url"]["url"]
+                            break
+                self._emit(event)
 
             # Auto-detect chat ID if not configured
             if not settings.telegram_chat_id:
                 self._save_chat_id(chat_id)
 
-            # Handle special commands
-            if text.strip().lower() in ("/reset", "/clear", "/new"):
+            # Handle special commands (only for plain text)
+            if isinstance(content, str) and content.strip().lower() in ("/reset", "/clear", "/new"):
                 if chat_id in self._chat_agents:
                     self._chat_agents[chat_id].reset()
                 reply = "Conversation cleared. Starting fresh!"
@@ -384,7 +397,7 @@ class MacbotService:
                             )
 
                 queue = self._get_agent_queue(chat_id)
-                result = await queue.submit(text, emit=_combined_emit)
+                result = await queue.submit(content, emit=_combined_emit)
 
                 # Emit outgoing response to GUI
                 if self._emit:
@@ -516,18 +529,22 @@ class MacbotService:
         for msg in agent.messages:
             role = msg.role
             if role == "user":
-                preview = (msg.content or "")[:80]
-                msg_branch.add(f"[green]user[/green]: {preview}{'...' if len(msg.content or '') > 80 else ''}")
+                text = msg.content_text
+                preview = text[:80]
+                suffix = " [image]" if isinstance(msg.content, list) else ""
+                msg_branch.add(f"[green]user[/green]: {preview}{'...' if len(text) > 80 else ''}{suffix}")
             elif role == "assistant":
                 if msg.tool_calls:
                     tools = ", ".join(tc.name for tc in msg.tool_calls)
                     msg_branch.add(f"[blue]assistant[/blue]: [dim]tool calls:[/dim] {tools}")
                 else:
-                    preview = (msg.content or "")[:80]
-                    msg_branch.add(f"[blue]assistant[/blue]: {preview}{'...' if len(msg.content or '') > 80 else ''}")
+                    text = msg.content_text
+                    preview = text[:80]
+                    msg_branch.add(f"[blue]assistant[/blue]: {preview}{'...' if len(text) > 80 else ''}")
             elif role == "tool":
-                preview = (msg.content or "")[:60]
-                msg_branch.add(f"[yellow]tool[/yellow]: {preview}{'...' if len(msg.content or '') > 60 else ''}")
+                text = msg.content_text
+                preview = text[:60]
+                msg_branch.add(f"[yellow]tool[/yellow]: {preview}{'...' if len(text) > 60 else ''}")
 
         # Skills
         enabled_skills = agent.skills_registry.list_enabled_skills()

@@ -5,6 +5,7 @@ through the agent, and sends back responses.
 """
 
 import asyncio
+import base64
 import logging
 import signal
 import tempfile
@@ -55,18 +56,18 @@ class TelegramService:
         self.bot = TelegramBot(bot_token)
         self.default_chat_id = chat_id
         self.allowed_users = set(allowed_users) if allowed_users else set()
-        self._handler: Callable[[str, str], Awaitable[str]] | None = None
+        self._handler: Callable[[str | list[dict[str, Any]], str], Awaitable[str]] | None = None
         self._running = False
         self._update_offset: int | None = None
 
     def set_message_handler(
         self,
-        handler: Callable[[str, str], Awaitable[str]],
+        handler: Callable[[str | list[dict[str, Any]], str], Awaitable[str]],
     ) -> None:
         """Set the handler for incoming messages.
 
-        The handler receives (message_text, chat_id) and should return
-        a response string to send back to the user.
+        The handler receives (content, chat_id) where content is either
+        a text string or a list of content blocks (for multimodal messages).
 
         Args:
             handler: Async function that processes messages
@@ -152,6 +153,33 @@ class TelegramService:
 
         except Exception as e:
             logger.exception(f"Error transcribing voice message: {e}")
+            return None
+
+    async def _download_photo(self, file_id: str) -> str | None:
+        """Download a photo from Telegram and return it as a base64 data URL.
+
+        Args:
+            file_id: Telegram file ID for the photo
+
+        Returns:
+            Data URL string (data:image/jpeg;base64,...) or None on failure
+        """
+        try:
+            file = await self.bot._bot.get_file(file_id)
+
+            with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as tmp:
+                tmp_path = Path(tmp.name)
+                await file.download_to_drive(tmp_path)
+
+            try:
+                image_bytes = tmp_path.read_bytes()
+                b64 = base64.b64encode(image_bytes).decode()
+                return f"data:image/jpeg;base64,{b64}"
+            finally:
+                tmp_path.unlink(missing_ok=True)
+
+        except Exception as e:
+            logger.exception(f"Error downloading photo: {e}")
             return None
 
     async def _summarize_for_voice(self, text: str) -> str:
@@ -274,6 +302,9 @@ class TelegramService:
         # Track whether original message was voice/audio
         is_voice = bool(message.voice or message.audio)
 
+        # content is either a plain str or a list of content blocks (multimodal)
+        content: str | list[dict[str, Any]]
+
         # Handle voice messages (voice notes) and audio files
         if message.voice:
             text = await self._transcribe_voice(message.voice.file_id)
@@ -285,6 +316,7 @@ class TelegramService:
                 )
                 return
             logger.info(f"Transcribed voice message: {text[:50]}...")
+            content = text
         elif message.audio:
             text = await self._transcribe_voice(message.audio.file_id)
             if not text:
@@ -295,10 +327,28 @@ class TelegramService:
                 )
                 return
             logger.info(f"Transcribed audio file: {text[:50]}...")
+            content = text
+        elif message.photo:
+            # Photos: download the largest size and build multimodal content blocks
+            photo = message.photo[-1]  # Largest resolution
+            data_url = await self._download_photo(photo.file_id)
+            if not data_url:
+                await self.send_message(
+                    "Sorry, I couldn't download your photo.",
+                    chat_id,
+                    parse_mode=None,
+                )
+                return
+            caption = message.caption or "What's in this image?"
+            content = [
+                {"type": "text", "text": caption},
+                {"type": "image_url", "image_url": {"url": data_url}},
+            ]
+            logger.info(f"Received photo with caption: {caption[:50]}...")
         elif message.text:
-            text = message.text
+            content = message.text
         else:
-            # Neither text nor voice/audio
+            # Unsupported message type
             return
 
         # Check user permissions
@@ -306,7 +356,8 @@ class TelegramService:
             logger.warning(f"Ignoring message from unauthorized user: {user_id}")
             return
 
-        logger.info(f"Received message from {user_id} in chat {chat_id}: {text[:50]}...")
+        log_preview = content if isinstance(content, str) else (content[0].get("text", "")[:50] if content else "")
+        logger.info(f"Received message from {user_id} in chat {chat_id}: {str(log_preview)[:50]}...")
 
         # Process through handler if set
         if self._handler:
@@ -314,7 +365,7 @@ class TelegramService:
                 # Send typing indicator
                 await self.bot._bot.send_chat_action(chat_id, "typing")
 
-                response = await self._handler(text, chat_id)
+                response = await self._handler(content, chat_id)
                 if response:
                     # Trim long responses for mobile readability
                     trimmed = await self._trim_for_telegram(response)

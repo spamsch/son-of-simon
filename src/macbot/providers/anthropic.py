@@ -54,7 +54,36 @@ class AnthropicProvider(LLMProvider):
                     ],
                 })
             else:
-                anthropic_messages.append({"role": msg.role, "content": msg.content})
+                if isinstance(msg.content, list):
+                    # Convert OpenAI-format content blocks to Anthropic format
+                    anthropic_content: list[dict[str, Any]] = []
+                    for block in msg.content:
+                        if block.get("type") == "text":
+                            anthropic_content.append({"type": "text", "text": block["text"]})
+                        elif block.get("type") == "image_url":
+                            # Convert data URL to Anthropic base64 source format
+                            url = block["image_url"]["url"]
+                            if url.startswith("data:"):
+                                # Parse "data:image/jpeg;base64,<data>"
+                                header, b64_data = url.split(",", 1)
+                                media_type = header.split(":")[1].split(";")[0]
+                                anthropic_content.append({
+                                    "type": "image",
+                                    "source": {
+                                        "type": "base64",
+                                        "media_type": media_type,
+                                        "data": b64_data,
+                                    },
+                                })
+                            else:
+                                # URL-based image
+                                anthropic_content.append({
+                                    "type": "image",
+                                    "source": {"type": "url", "url": url},
+                                })
+                    anthropic_messages.append({"role": msg.role, "content": anthropic_content})
+                else:
+                    anthropic_messages.append({"role": msg.role, "content": msg.content})
 
         # Build request kwargs
         kwargs: dict[str, Any] = {

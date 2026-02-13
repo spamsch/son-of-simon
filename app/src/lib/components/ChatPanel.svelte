@@ -219,6 +219,16 @@
                   {/each}
                 </div>
               {/if}
+              <!-- Image attachment (shown above the text bubble) -->
+              {#if msg.imageUrl}
+                <div class="max-w-[85%]">
+                  <img
+                    src={msg.imageUrl}
+                    alt="Uploaded image"
+                    class="rounded-xl max-h-[240px] object-contain border border-border/30"
+                  />
+                </div>
+              {/if}
               <!-- Message bubble -->
               {#if msg.text || msg.status === "streaming"}
                 <div
