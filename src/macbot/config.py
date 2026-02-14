@@ -222,6 +222,12 @@ Before starting a task, check `get_agent_memory` to see recent context and avoid
         description="Paperless-ngx API token",
     )
 
+    # Mindwtr settings
+    mindwtr_data_path: str = Field(
+        default="~/Sync/mindwtr/data.json",
+        description="Path to Mindwtr sync data.json file",
+    )
+
     def get_model(self) -> str:
         """Get the model string in provider/model format.
 
