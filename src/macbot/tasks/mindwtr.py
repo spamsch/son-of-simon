@@ -419,6 +419,7 @@ class MindwtrAddTaskTask(Task):
         priority: str = "",
         due_date: str = "",
         project_id: str = "",
+        section_id: str = "",
         description: str = "",
     ) -> dict[str, Any]:
         """Create a task.
@@ -430,6 +431,7 @@ class MindwtrAddTaskTask(Task):
             priority: Priority level (low, medium, high, urgent)
             due_date: Due date in ISO format (YYYY-MM-DD) or natural language (tomorrow, next monday)
             project_id: Project ID to assign to
+            section_id: Section ID within the project to assign to (requires project_id)
             description: Task description/notes
 
         Returns:
@@ -461,6 +463,21 @@ class MindwtrAddTaskTask(Task):
                 props["dueDate"] = parsed_date
         if project_id:
             props["projectId"] = project_id
+        if section_id:
+            # Ensure section belongs to the target project
+            target_project = project_id or props.get("projectId", "")
+            if not target_project:
+                return {"success": False, "error": "section_id requires a project_id"}
+            section = next(
+                (s for s in data.get("sections", [])
+                 if s.get("id") == section_id and not s.get("deletedAt")),
+                None,
+            )
+            if not section:
+                return {"success": False, "error": f"Section {section_id} not found"}
+            if section.get("projectId") != target_project:
+                return {"success": False, "error": "Section does not belong to the specified project"}
+            props["sectionId"] = section_id
         if description:
             props["description"] = description
 
@@ -531,6 +548,7 @@ class MindwtrUpdateTaskTask(Task):
         priority: str = "",
         due_date: str = "",
         project_id: str = "",
+        section_id: str = "",
         description: str = "",
         tags: list[str] | None = None,
         contexts: list[str] | None = None,
@@ -544,6 +562,7 @@ class MindwtrUpdateTaskTask(Task):
             priority: New priority (low, medium, high, urgent)
             due_date: New due date in ISO format (YYYY-MM-DD) or natural language
             project_id: New project ID or empty to clear
+            section_id: Section ID within the project (use "__clear__" to remove from section)
             description: New description/notes
             tags: New tags list (replaces existing)
             contexts: New contexts list (replaces existing)
@@ -573,7 +592,28 @@ class MindwtrUpdateTaskTask(Task):
                     if parsed_date:
                         t["dueDate"] = parsed_date
                 if project_id:
+                    old_project = t.get("projectId")
                     t["projectId"] = project_id
+                    # Clear section when moving to a different project (unless section_id also provided)
+                    if old_project != project_id and not section_id:
+                        t.pop("sectionId", None)
+                if section_id:
+                    if section_id == "__clear__":
+                        t.pop("sectionId", None)
+                    else:
+                        target_project = project_id or t.get("projectId", "")
+                        if not target_project:
+                            return {"success": False, "error": "section_id requires the task to have a project"}
+                        section = next(
+                            (s for s in data.get("sections", [])
+                             if s.get("id") == section_id and not s.get("deletedAt")),
+                            None,
+                        )
+                        if not section:
+                            return {"success": False, "error": f"Section {section_id} not found"}
+                        if section.get("projectId") != target_project:
+                            return {"success": False, "error": "Section does not belong to the task's project"}
+                        t["sectionId"] = section_id
                 if description:
                     t["description"] = description
                 if tags is not None:
@@ -849,6 +889,205 @@ class MindwtrUpdateProjectTask(Task):
         return {"success": False, "error": f"Project {project_id} not found"}
 
 
+class MindwtrListSectionsTask(Task):
+    """List sections for a project."""
+
+    @property
+    def name(self) -> str:
+        return "mindwtr_list_sections"
+
+    @property
+    def description(self) -> str:
+        return (
+            "List sections within a Mindwtr project. Sections group tasks "
+            "into logical phases or categories within a project."
+        )
+
+    async def execute(self, project_id: str) -> dict[str, Any]:
+        """List sections for a project.
+
+        Args:
+            project_id: The project ID to list sections for
+
+        Returns:
+            Dictionary with sections list
+        """
+        data = _load()
+        sections = [
+            s for s in data.get("sections", [])
+            if s.get("projectId") == project_id and not s.get("deletedAt")
+        ]
+        sections.sort(key=lambda s: s.get("order", 0))
+        return {"success": True, "count": len(sections), "sections": sections}
+
+
+class MindwtrCreateSectionTask(Task):
+    """Create a new section in a project."""
+
+    @property
+    def name(self) -> str:
+        return "mindwtr_create_section"
+
+    @property
+    def description(self) -> str:
+        return (
+            "Create a new section within a Mindwtr project. Sections group tasks "
+            "into logical phases or categories (e.g., 'Planning', 'In Progress', 'Review')."
+        )
+
+    async def execute(
+        self,
+        project_id: str,
+        title: str,
+        description: str = "",
+    ) -> dict[str, Any]:
+        """Create a section.
+
+        Args:
+            project_id: The project ID to create the section in
+            title: Section title
+            description: Optional section description
+
+        Returns:
+            Dictionary with created section
+        """
+        if not title.strip():
+            return {"success": False, "error": "Section title is required"}
+
+        data = _load()
+
+        # Verify project exists
+        project = next(
+            (p for p in data.get("projects", [])
+             if p.get("id") == project_id and not p.get("deletedAt")),
+            None,
+        )
+        if not project:
+            return {"success": False, "error": f"Project {project_id} not found"}
+
+        # Determine next order value
+        existing = [
+            s for s in data.get("sections", [])
+            if s.get("projectId") == project_id and not s.get("deletedAt")
+        ]
+        max_order = max((s.get("order", 0) for s in existing), default=-1)
+
+        now = _now_iso()
+        section: dict[str, Any] = {
+            "id": _generate_id(),
+            "projectId": project_id,
+            "title": title.strip(),
+            "order": max_order + 1,
+            "createdAt": now,
+            "updatedAt": now,
+        }
+        if description:
+            section["description"] = description
+
+        data.setdefault("sections", []).append(section)
+        _save(data)
+
+        return {"success": True, "section": section}
+
+
+class MindwtrUpdateSectionTask(Task):
+    """Update an existing section."""
+
+    @property
+    def name(self) -> str:
+        return "mindwtr_update_section"
+
+    @property
+    def description(self) -> str:
+        return "Update a Mindwtr section's title, description, or order."
+
+    async def execute(
+        self,
+        section_id: str,
+        title: str = "",
+        description: str = "",
+        order: int | None = None,
+    ) -> dict[str, Any]:
+        """Update a section.
+
+        Args:
+            section_id: The section ID to update
+            title: New title
+            description: New description
+            order: New sort order within the project
+
+        Returns:
+            Dictionary with updated section
+        """
+        data = _load()
+        now = _now_iso()
+
+        for i, s in enumerate(data.get("sections", [])):
+            if s.get("id") == section_id and not s.get("deletedAt"):
+                if title:
+                    s["title"] = title.strip()
+                if description:
+                    s["description"] = description
+                if order is not None:
+                    s["order"] = order
+
+                s["updatedAt"] = now
+                data["sections"][i] = s
+                _save(data)
+                return {"success": True, "section": s}
+
+        return {"success": False, "error": f"Section {section_id} not found"}
+
+
+class MindwtrDeleteSectionTask(Task):
+    """Soft-delete a section and clear sectionId on its tasks."""
+
+    @property
+    def name(self) -> str:
+        return "mindwtr_delete_section"
+
+    @property
+    def description(self) -> str:
+        return (
+            "Delete a Mindwtr section. Tasks in the section remain in the project "
+            "but are moved out of the section."
+        )
+
+    async def execute(self, section_id: str) -> dict[str, Any]:
+        """Soft-delete a section.
+
+        Args:
+            section_id: The section ID to delete
+
+        Returns:
+            Dictionary with success status
+        """
+        data = _load()
+        now = _now_iso()
+
+        found = False
+        for i, s in enumerate(data.get("sections", [])):
+            if s.get("id") == section_id and not s.get("deletedAt"):
+                s["deletedAt"] = now
+                s["updatedAt"] = now
+                data["sections"][i] = s
+                found = True
+                break
+
+        if not found:
+            return {"success": False, "error": f"Section {section_id} not found"}
+
+        # Clear sectionId on tasks that belonged to this section
+        for j, t in enumerate(data["tasks"]):
+            if t.get("sectionId") == section_id:
+                t.pop("sectionId", None)
+                t["updatedAt"] = now
+                data["tasks"][j] = t
+
+        _save(data)
+        return {"success": True, "message": f"Section {section_id} deleted"}
+
+
 class MindwtrListTagsTask(Task):
     """List all tags and contexts used across tasks."""
 
@@ -937,6 +1176,103 @@ class MindwtrSearchTask(Task):
         }
 
 
+class MindwtrUpdateChecklistTask(Task):
+    """Manage checklist items on a task."""
+
+    @property
+    def name(self) -> str:
+        return "mindwtr_update_checklist"
+
+    @property
+    def description(self) -> str:
+        return (
+            "Manage checklist (subtask) items on a Mindwtr task. "
+            "Actions: 'add' to add items, 'remove' to delete an item by ID, "
+            "'toggle' to toggle completion of an item by ID, "
+            "'set' to replace the entire checklist. "
+            "Use 'items' for add/set (list of title strings), 'item_id' for remove/toggle."
+        )
+
+    async def execute(
+        self,
+        task_id: str,
+        action: str,
+        items: list[str] | None = None,
+        item_id: str = "",
+        item_title: str = "",
+    ) -> dict[str, Any]:
+        """Manage checklist items.
+
+        Args:
+            task_id: The task ID to manage checklist for
+            action: Action to perform: add, remove, toggle, set
+            items: List of title strings (for 'add' and 'set' actions)
+            item_id: Checklist item ID (for 'remove' and 'toggle' actions)
+            item_title: New title for an item (for 'toggle' action, optional rename)
+
+        Returns:
+            Dictionary with updated task checklist
+        """
+        valid_actions = {"add", "remove", "toggle", "set"}
+        if action not in valid_actions:
+            return {"success": False, "error": f"Invalid action '{action}'. Use: {', '.join(sorted(valid_actions))}"}
+
+        data = _load()
+        now = _now_iso()
+
+        for i, t in enumerate(data["tasks"]):
+            if t.get("id") == task_id:
+                checklist: list[dict[str, Any]] = list(t.get("checklist") or [])
+
+                if action == "add":
+                    if not items:
+                        return {"success": False, "error": "'items' is required for 'add' action"}
+                    for title in items:
+                        checklist.append({
+                            "id": _generate_id(),
+                            "title": title.strip(),
+                            "isCompleted": False,
+                        })
+
+                elif action == "remove":
+                    if not item_id:
+                        return {"success": False, "error": "'item_id' is required for 'remove' action"}
+                    original_len = len(checklist)
+                    checklist = [c for c in checklist if c.get("id") != item_id]
+                    if len(checklist) == original_len:
+                        return {"success": False, "error": f"Checklist item {item_id} not found"}
+
+                elif action == "toggle":
+                    if not item_id:
+                        return {"success": False, "error": "'item_id' is required for 'toggle' action"}
+                    found = False
+                    for c in checklist:
+                        if c.get("id") == item_id:
+                            c["isCompleted"] = not c.get("isCompleted", False)
+                            if item_title:
+                                c["title"] = item_title.strip()
+                            found = True
+                            break
+                    if not found:
+                        return {"success": False, "error": f"Checklist item {item_id} not found"}
+
+                elif action == "set":
+                    if items is None:
+                        return {"success": False, "error": "'items' is required for 'set' action"}
+                    checklist = [
+                        {"id": _generate_id(), "title": title.strip(), "isCompleted": False}
+                        for title in items
+                    ]
+
+                t["checklist"] = checklist
+                t["updatedAt"] = now
+                data["tasks"][i] = t
+                _save(data)
+                return {"success": True, "checklist": checklist}
+
+        return {"success": False, "error": f"Task {task_id} not found"}
+
+
 def register_mindwtr_tasks(registry: Any) -> None:
     """Register Mindwtr tasks with a registry.
 
@@ -953,5 +1289,10 @@ def register_mindwtr_tasks(registry: Any) -> None:
     registry.register(MindwtrListProjectsTask())
     registry.register(MindwtrCreateProjectTask())
     registry.register(MindwtrUpdateProjectTask())
+    registry.register(MindwtrListSectionsTask())
+    registry.register(MindwtrCreateSectionTask())
+    registry.register(MindwtrUpdateSectionTask())
+    registry.register(MindwtrDeleteSectionTask())
+    registry.register(MindwtrUpdateChecklistTask())
     registry.register(MindwtrListTagsTask())
     registry.register(MindwtrSearchTask())
