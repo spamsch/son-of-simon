@@ -2170,6 +2170,464 @@ class ToggleDndTask(Task):
 
 
 # =============================================================================
+# THINGS3 TASKS
+# =============================================================================
+
+class ShowThingsTodayTask(Task):
+    """Show the Things3 Today list."""
+
+    @property
+    def name(self) -> str:
+        return "show_things_today"
+
+    @property
+    def description(self) -> str:
+        return "Show all to-dos in the Things3 Today list with project, tags, and due dates."
+
+    async def execute(self) -> dict[str, Any]:
+        """Show Today list.
+
+        Returns:
+            Dictionary with Today's to-dos.
+        """
+        return await run_script("things/show-today.sh", timeout=15)
+
+
+class ShowThingsInboxTask(Task):
+    """Show the Things3 Inbox."""
+
+    @property
+    def name(self) -> str:
+        return "show_things_inbox"
+
+    @property
+    def description(self) -> str:
+        return "Show all to-dos in the Things3 Inbox (unprocessed items)."
+
+    async def execute(self) -> dict[str, Any]:
+        """Show Inbox items.
+
+        Returns:
+            Dictionary with Inbox to-dos.
+        """
+        return await run_script("things/show-inbox.sh", timeout=15)
+
+
+class ListThingsTodosTask(Task):
+    """List Things3 to-dos with filters."""
+
+    @property
+    def name(self) -> str:
+        return "list_things_todos"
+
+    @property
+    def description(self) -> str:
+        return (
+            "List to-dos from Things3 with optional filters by built-in list, project, tag, and status. "
+            "Built-in lists: Inbox, Today, Upcoming, Anytime, Someday, Logbook, Trash."
+        )
+
+    async def execute(
+        self,
+        list_name: str | None = None,
+        project: str | None = None,
+        tag: str | None = None,
+        status: str = "open",
+        limit: int = 50
+    ) -> dict[str, Any]:
+        """List to-dos.
+
+        Args:
+            list_name: Filter by built-in list (Inbox, Today, Upcoming, Anytime, Someday, Logbook, Trash).
+            project: Filter by project name.
+            tag: Filter by tag name.
+            status: Filter by status: open, completed, canceled (default: open).
+            limit: Maximum number of results (default: 50).
+
+        Returns:
+            Dictionary with to-do list.
+        """
+        args = ["--status", status, "--limit", str(limit)]
+        if list_name:
+            args.extend(["--list", list_name])
+        if project:
+            args.extend(["--project", project])
+        if tag:
+            args.extend(["--tag", tag])
+
+        return await run_script("things/list-todos.sh", args, timeout=15)
+
+
+class SearchThingsTodosTask(Task):
+    """Search Things3 to-dos by name or notes."""
+
+    @property
+    def name(self) -> str:
+        return "search_things_todos"
+
+    @property
+    def description(self) -> str:
+        return "Search to-dos in Things3 by matching text in the name or notes fields."
+
+    async def execute(
+        self,
+        query: str,
+        status: str = "open",
+        include_completed: bool = False,
+        limit: int = 20
+    ) -> dict[str, Any]:
+        """Search to-dos.
+
+        Args:
+            query: Search text to match in name or notes.
+            status: Filter by status: open, completed, canceled (default: open).
+            include_completed: Include completed to-dos in search results.
+            limit: Maximum number of results (default: 20).
+
+        Returns:
+            Dictionary with matching to-dos.
+        """
+        args = ["--query", query, "--status", status, "--limit", str(limit)]
+        if include_completed:
+            args.append("--include-completed")
+
+        return await run_script("things/search-todos.sh", args, timeout=15)
+
+
+class CreateThingsTodoTask(Task):
+    """Create a new Things3 to-do."""
+
+    @property
+    def name(self) -> str:
+        return "create_things_todo"
+
+    @property
+    def description(self) -> str:
+        return (
+            "Create a new to-do in Things3 with optional notes, due date, tags, project, "
+            "and scheduling (today, evening, tomorrow, someday, anytime, or a date)."
+        )
+
+    async def execute(
+        self,
+        name: str,
+        notes: str | None = None,
+        due: str | None = None,
+        tags: str | None = None,
+        project: str | None = None,
+        list_name: str | None = None,
+        schedule: str | None = None,
+        heading: str | None = None,
+    ) -> dict[str, Any]:
+        """Create a to-do.
+
+        Args:
+            name: To-do name/title.
+            notes: Notes or description.
+            due: Due date as "YYYY-MM-DD".
+            tags: Comma-separated tag names.
+            project: Assign to this project.
+            list_name: Add to built-in list (Inbox, Today, Anytime, Someday).
+            schedule: Schedule: "today", "evening", "tomorrow", "someday", "anytime", or "YYYY-MM-DD".
+            heading: Place under a heading within the project.
+
+        Returns:
+            Dictionary with creation result.
+        """
+        args = ["--name", name]
+        if notes:
+            args.extend(["--notes", notes])
+        if due:
+            args.extend(["--due", due])
+        if tags:
+            args.extend(["--tags", tags])
+        if project:
+            args.extend(["--project", project])
+        if list_name:
+            args.extend(["--list", list_name])
+        if schedule:
+            args.extend(["--schedule", schedule])
+        if heading:
+            args.extend(["--heading", heading])
+
+        return await run_script("things/create-todo.sh", args, timeout=15)
+
+
+class CompleteThingsTodoTask(Task):
+    """Mark a Things3 to-do as complete."""
+
+    @property
+    def name(self) -> str:
+        return "complete_things_todo"
+
+    @property
+    def description(self) -> str:
+        return "Mark one or more Things3 to-dos as complete by name, pattern, or ID."
+
+    async def execute(
+        self,
+        name: str | None = None,
+        pattern: str | None = None,
+        id: str | None = None,
+        dry_run: bool = False
+    ) -> dict[str, Any]:
+        """Complete a to-do.
+
+        Args:
+            name: Exact to-do name to complete.
+            pattern: Complete all to-dos containing this text.
+            id: Complete to-do by ID (recommended for precision).
+            dry_run: Preview what would be completed without completing.
+
+        Returns:
+            Dictionary with completion result.
+        """
+        if not name and not pattern and not id:
+            return {"success": False, "error": "Must specify name, pattern, or id"}
+
+        args = []
+        if id:
+            args.extend(["--id", id])
+        elif name:
+            args.extend(["--name", name])
+        elif pattern:
+            args.extend(["--pattern", pattern])
+
+        if dry_run:
+            args.append("--dry-run")
+
+        return await run_script("things/complete-todo.sh", args, timeout=15)
+
+
+class UpdateThingsTodoTask(Task):
+    """Update a Things3 to-do."""
+
+    @property
+    def name(self) -> str:
+        return "update_things_todo"
+
+    @property
+    def description(self) -> str:
+        return (
+            "Update properties of an existing Things3 to-do. Find by ID (recommended) or name, "
+            "then set new name, notes, due date, tags, project, or status."
+        )
+
+    async def execute(
+        self,
+        id: str | None = None,
+        name: str | None = None,
+        set_name: str | None = None,
+        set_notes: str | None = None,
+        set_due: str | None = None,
+        clear_due: bool = False,
+        set_tags: str | None = None,
+        set_project: str | None = None,
+        set_status: str | None = None,
+    ) -> dict[str, Any]:
+        """Update a to-do.
+
+        Args:
+            id: Find to-do by ID (recommended).
+            name: Find to-do by exact name.
+            set_name: Set new name.
+            set_notes: Set new notes.
+            set_due: Set due date as "YYYY-MM-DD".
+            clear_due: Remove the due date.
+            set_tags: Set tags (comma-separated, replaces existing).
+            set_project: Move to this project.
+            set_status: Set status: completed, canceled, open.
+
+        Returns:
+            Dictionary with update result.
+        """
+        if not id and not name:
+            return {"success": False, "error": "Must specify id or name"}
+
+        args = []
+        if id:
+            args.extend(["--id", id])
+        if name:
+            args.extend(["--name", name])
+        if set_name:
+            args.extend(["--set-name", set_name])
+        if set_notes:
+            args.extend(["--set-notes", set_notes])
+        if set_due:
+            args.extend(["--set-due", set_due])
+        if clear_due:
+            args.append("--clear-due")
+        if set_tags:
+            args.extend(["--set-tags", set_tags])
+        if set_project:
+            args.extend(["--set-project", set_project])
+        if set_status:
+            args.extend(["--set-status", set_status])
+
+        return await run_script("things/update-todo.sh", args, timeout=15)
+
+
+class MoveThingsTodoTask(Task):
+    """Move a Things3 to-do to a list or project."""
+
+    @property
+    def name(self) -> str:
+        return "move_things_todo"
+
+    @property
+    def description(self) -> str:
+        return (
+            "Move a Things3 to-do to a different built-in list (Inbox, Today, Anytime, Someday) "
+            "or to a project."
+        )
+
+    async def execute(
+        self,
+        id: str | None = None,
+        name: str | None = None,
+        to_list: str | None = None,
+        to_project: str | None = None,
+    ) -> dict[str, Any]:
+        """Move a to-do.
+
+        Args:
+            id: Find to-do by ID (recommended).
+            name: Find to-do by exact name.
+            to_list: Move to built-in list (Inbox, Today, Anytime, Someday).
+            to_project: Move to project.
+
+        Returns:
+            Dictionary with move result.
+        """
+        if not id and not name:
+            return {"success": False, "error": "Must specify id or name"}
+        if not to_list and not to_project:
+            return {"success": False, "error": "Must specify to_list or to_project"}
+
+        args = []
+        if id:
+            args.extend(["--id", id])
+        if name:
+            args.extend(["--name", name])
+        if to_list:
+            args.extend(["--to-list", to_list])
+        if to_project:
+            args.extend(["--to-project", to_project])
+
+        return await run_script("things/move-todo.sh", args, timeout=15)
+
+
+class ListThingsProjectsTask(Task):
+    """List Things3 projects."""
+
+    @property
+    def name(self) -> str:
+        return "list_things_projects"
+
+    @property
+    def description(self) -> str:
+        return "List projects in Things3 with optional status filtering and to-do counts."
+
+    async def execute(
+        self,
+        status: str = "open",
+        with_todos: bool = False,
+        limit: int = 50
+    ) -> dict[str, Any]:
+        """List projects.
+
+        Args:
+            status: Filter by status: open, completed, canceled (default: open).
+            with_todos: Include open to-do counts for each project.
+            limit: Maximum number of projects (default: 50).
+
+        Returns:
+            Dictionary with project list.
+        """
+        args = ["--status", status, "--limit", str(limit)]
+        if with_todos:
+            args.append("--with-todos")
+
+        return await run_script("things/list-projects.sh", args, timeout=15)
+
+
+class CreateThingsProjectTask(Task):
+    """Create a new Things3 project."""
+
+    @property
+    def name(self) -> str:
+        return "create_things_project"
+
+    @property
+    def description(self) -> str:
+        return "Create a new project in Things3 with optional notes, due date, tags, and area."
+
+    async def execute(
+        self,
+        name: str,
+        notes: str | None = None,
+        due: str | None = None,
+        tags: str | None = None,
+        area: str | None = None,
+    ) -> dict[str, Any]:
+        """Create a project.
+
+        Args:
+            name: Project name.
+            notes: Project notes/description.
+            due: Due date as "YYYY-MM-DD".
+            tags: Comma-separated tag names.
+            area: Assign to this area.
+
+        Returns:
+            Dictionary with creation result.
+        """
+        args = ["--name", name]
+        if notes:
+            args.extend(["--notes", notes])
+        if due:
+            args.extend(["--due", due])
+        if tags:
+            args.extend(["--tags", tags])
+        if area:
+            args.extend(["--area", area])
+
+        return await run_script("things/create-project.sh", args, timeout=15)
+
+
+class ListThingsTagsTask(Task):
+    """List all Things3 tags."""
+
+    @property
+    def name(self) -> str:
+        return "list_things_tags"
+
+    @property
+    def description(self) -> str:
+        return "List all tags defined in Things3, optionally with open to-do counts."
+
+    async def execute(
+        self,
+        with_counts: bool = False,
+        limit: int = 100
+    ) -> dict[str, Any]:
+        """List tags.
+
+        Args:
+            with_counts: Show number of open to-dos per tag.
+            limit: Maximum number of tags (default: 100).
+
+        Returns:
+            Dictionary with tag list.
+        """
+        args = ["--limit", str(limit)]
+        if with_counts:
+            args.append("--with-counts")
+
+        return await run_script("things/list-tags.sh", args, timeout=15)
+
+
+# =============================================================================
 # REGISTRATION HELPER
 # =============================================================================
 
@@ -2250,3 +2708,16 @@ def register_macos_tasks(registry) -> None:
     registry.register(SetVolumeTask())
     registry.register(ToggleDarkModeTask())
     registry.register(ToggleDndTask())
+
+    # Things3 tasks
+    registry.register(ShowThingsTodayTask())
+    registry.register(ShowThingsInboxTask())
+    registry.register(ListThingsTodosTask())
+    registry.register(SearchThingsTodosTask())
+    registry.register(CreateThingsTodoTask())
+    registry.register(CompleteThingsTodoTask())
+    registry.register(UpdateThingsTodoTask())
+    registry.register(MoveThingsTodoTask())
+    registry.register(ListThingsProjectsTask())
+    registry.register(CreateThingsProjectTask())
+    registry.register(ListThingsTagsTask())
