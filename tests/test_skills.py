@@ -628,9 +628,9 @@ class TestSkillTaskValidation:
             assert task is not None, f"Task '{task_name}' not found in registry"
 
     def test_all_builtin_skills_have_valid_tasks(self, task_registry, skills_registry) -> None:
-        """Verify all built-in skills reference only existing tasks."""
+        """Verify all enabled built-in skills reference only existing tasks."""
         for skill in skills_registry.list_skills():
-            if not skill.is_builtin:
+            if not skill.is_builtin or not skill.enabled:
                 continue
             for task_name in skill.tasks:
                 task = task_registry.get(task_name)

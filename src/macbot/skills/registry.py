@@ -154,6 +154,34 @@ class SkillsRegistry:
             extends=None,  # Clear extends on merged result
         )
 
+    @staticmethod
+    def _check_requires_settings(skill: Skill) -> bool:
+        """Check if a skill's required settings are configured.
+
+        Skills can declare ``requires_settings`` in their SKILL.md frontmatter
+        (a list of Settings field names that must be non-empty).  When any
+        required setting is empty, the skill is auto-disabled.
+
+        Returns:
+            True if all required settings are satisfied (or none declared).
+        """
+        required: list[str] = skill.metadata.get("requires_settings", [])
+        if not required:
+            return True
+
+        try:
+            from macbot.config import settings as app_settings
+        except Exception:
+            return False
+
+        for field_name in required:
+            if not getattr(app_settings, field_name, ""):
+                logger.debug(
+                    f"Skill '{skill.id}' disabled: setting '{field_name}' is not configured"
+                )
+                return False
+        return True
+
     def _load_skills(self) -> None:
         """Load all skills from disk."""
         self._skills.clear()
@@ -162,6 +190,8 @@ class SkillsRegistry:
         builtin_skills = discover_skills(self.builtin_dir, is_builtin=True)
         for skill in builtin_skills:
             skill.enabled = self._config.is_enabled(skill.id, default=True)
+            if skill.enabled and not self._check_requires_settings(skill):
+                skill.enabled = False
             self._skills[skill.id] = skill
             logger.debug(f"Loaded built-in skill: {skill.id}")
 
@@ -169,6 +199,8 @@ class SkillsRegistry:
         user_skills = discover_skills(self.user_dir, is_builtin=False)
         for skill in user_skills:
             skill.enabled = self._config.is_enabled(skill.id, default=True)
+            if skill.enabled and not self._check_requires_settings(skill):
+                skill.enabled = False
 
             if skill.extends:
                 # Extend mode: merge with built-in

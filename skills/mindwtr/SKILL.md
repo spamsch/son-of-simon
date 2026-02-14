@@ -15,6 +15,11 @@ tasks:
   - mindwtr_list_projects
   - mindwtr_create_project
   - mindwtr_update_project
+  - mindwtr_list_sections
+  - mindwtr_create_section
+  - mindwtr_update_section
+  - mindwtr_delete_section
+  - mindwtr_update_checklist
   - mindwtr_list_tags
   - mindwtr_search
 examples:
@@ -36,6 +41,8 @@ confirm_before_write:
   - delete task
   - archive task
 requires_permissions: []
+requires_settings:
+  - mindwtr_data_path
 ---
 
 ## Behavior Notes
@@ -91,6 +98,21 @@ Always prefer using `input` with quick-add syntax over setting individual fields
 - Use `mindwtr_list_tasks(query="...")` for filtered task-only searches
 - Search supports @context and #tag syntax in queries
 - Use `mindwtr_list_tasks(status="...")` when the user asks for a specific GTD list
+
+### Sections
+Sections group tasks within a project into logical phases (e.g., "Planning", "In Progress", "Review"):
+1. List sections: `mindwtr_list_sections(project_id="...")`
+2. Create: `mindwtr_create_section(project_id="...", title="Phase 1")`
+3. Assign task to section: use `section_id` on `mindwtr_add_task` or `mindwtr_update_task`
+4. Remove from section: `mindwtr_update_task(task_id="...", section_id="__clear__")`
+5. Deleting a section automatically clears `sectionId` on its tasks
+
+### Checklists
+Tasks can have checklist items (subtasks). Use `mindwtr_update_checklist`:
+- **Add items**: `action="add", items=["Step 1", "Step 2"]`
+- **Toggle completion**: `action="toggle", item_id="..."`
+- **Remove item**: `action="remove", item_id="..."`
+- **Replace all**: `action="set", items=["New 1", "New 2"]`
 
 ### Two-Step Lookup
 When the user refers to a task vaguely (e.g., "that grocery task"):

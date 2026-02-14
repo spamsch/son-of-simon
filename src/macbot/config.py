@@ -224,8 +224,8 @@ Before starting a task, check `get_agent_memory` to see recent context and avoid
 
     # Mindwtr settings
     mindwtr_data_path: str = Field(
-        default="~/Sync/mindwtr/data.json",
-        description="Path to Mindwtr sync data.json file",
+        default="",
+        description="Path to Mindwtr sync data.json file (leave empty to disable Mindwtr integration)",
     )
 
     def get_model(self) -> str:

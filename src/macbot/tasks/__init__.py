@@ -144,9 +144,10 @@ def create_default_registry(config: "Settings | None" = None) -> TaskRegistry:
     from macbot.tasks.teams import register_teams_tasks
     register_teams_tasks(registry)
 
-    # Register Mindwtr GTD tasks
-    from macbot.tasks.mindwtr import register_mindwtr_tasks
-    register_mindwtr_tasks(registry)
+    # Register Mindwtr GTD tasks (only when data path is configured)
+    if config and config.mindwtr_data_path:
+        from macbot.tasks.mindwtr import register_mindwtr_tasks
+        register_mindwtr_tasks(registry)
 
     # Register core preferences task
     from macbot.tasks.preferences import register_preferences_tasks
